@@ -4,6 +4,7 @@
 
 #![forbid(unsafe_code)]
 
+use anyhow::{anyhow, Context};
 use clap::Parser;
 use move_binary_format::{
     binary_views::BinaryIndexedView,
@@ -54,7 +55,7 @@ struct Args {
     pub bitcode_in_text: bool,
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let move_extension = MOVE_EXTENSION;
@@ -64,16 +65,15 @@ fn main() {
     let source_path = Path::new(&args.bytecode_file_path);
     let extension = source_path
         .extension()
-        .expect("Missing file extension for bytecode file");
+        .ok_or_else(|| anyhow!("Missing file extension for bytecode file"))?;
     if extension != mv_bytecode_extension {
-        println!(
+        anyhow::bail!(
             "Bad source file extension {:?}; expected {}",
             extension, mv_bytecode_extension
         );
-        std::process::exit(1);
     }
 
-    let bytecode_bytes = fs::read(&args.bytecode_file_path).expect("Unable to read bytecode file");
+    let bytecode_bytes = fs::read(&args.bytecode_file_path).context("Unable to read bytecode file")?;
 
     let source_path = Path::new(&args.bytecode_file_path).with_extension(move_extension);
     let source = fs::read_to_string(&source_path).ok();
@@ -93,11 +93,11 @@ fn main() {
     let script: CompiledScript;
     let bytecode = if args.is_script {
         script = CompiledScript::deserialize(&bytecode_bytes)
-            .expect("Script blob can't be deserialized");
+            .context("Script blob can't be deserialized")?;
         BinaryIndexedView::Script(&script)
     } else {
         module = CompiledModule::deserialize(&bytecode_bytes)
-            .expect("Module blob can't be deserialized");
+            .context("Module blob can't be deserialized")?;
         BinaryIndexedView::Module(&module)
     };
 
@@ -106,7 +106,7 @@ fn main() {
             SourceMapping::new(s, bytecode)
         } else {
             SourceMapping::new_from_view(bytecode, no_loc)
-                .expect("Unable to build dummy source mapping")
+                .context("Unable to build dummy source mapping")?
         }
     };
 
@@ -117,11 +117,13 @@ fn main() {
     let llvm_context = LLVMContext::create();
     let disassembler = Disassembler::new(source_mapping, disassembler_options, llvm_context);
 
-    let dissassemble_string = disassembler.disassemble().expect("Unable to dissassemble");
+    let dissassemble_string = disassembler.disassemble().context("Unable to dissassemble")?;
 
     if args.output_file_path.eq("-") {
         println!("{}", dissassemble_string);
     } else {
-        fs::write(&args.output_file_path, dissassemble_string).expect(&format!("Unable to write to {}", &args.output_file_path));
+        fs::write(&args.output_file_path, dissassemble_string).context(format!("Unable to write to {}", &args.output_file_path))?;
     }
+
+    Ok(())
 }
