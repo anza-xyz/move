@@ -28,6 +28,7 @@
 
 use crate::stackless::extensions::*;
 use crate::stackless::llvm;
+use llvm_sys::prelude::LLVMValueRef;
 use move_model::ast as mast;
 use move_model::model as mm;
 use move_model::ty as mty;
@@ -408,32 +409,39 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         }
     }
 
+    fn load_reg(
+        &self,
+        src_idx: mast::TempIndex,
+        name: &str,
+    ) -> LLVMValueRef {
+        let src_llval = self.locals[src_idx].llval;
+        let src_ty = self.locals[src_idx].llty;
+        self.llvm_builder.build_load(src_ty, src_llval, name)
+    }
+
+    fn store_reg(
+        &self,
+        dst_idx: mast::TempIndex,
+        dst_reg: LLVMValueRef,
+    ) {
+        let dst_llval = self.locals[dst_idx].llval;
+        self.llvm_builder.build_store(dst_reg, dst_llval);
+    }
+
     fn translate_arithm_impl(
         &self,
         dst: &[mast::TempIndex],
-        op: &sbc::Operation,
         src: &[mast::TempIndex],
         name: &str,
+        op: llvm_sys::LLVMOpcode,
     ) {
         assert_eq!(dst.len(), 1);
         assert_eq!(src.len(), 2);
-        let dst_idx = dst[0];
-        let src0_idx = src[0];
-        let src1_idx = src[1];
-        let dst_llval = self.locals[dst_idx].llval;
-        let src0_llval = self.locals[src0_idx].llval;
-        let src1_llval = self.locals[src1_idx].llval;
-        let src0_ty = self.locals[src0_idx].llty;
-        let src1_ty = self.locals[src0_idx].llty;
-        let src0_reg = self
-            .llvm_builder
-            .build_load(src0_ty, src0_llval, [str, "src_0"].join("_").as_str());
-        let src1_reg = self
-            .llvm_builder
-            .build_load(src1_ty, src1_llval, [str, "src_1"].join("_").as_str());
-        let dst_reg = self.llvm_builder.build_add(src0_reg, src1_reg,
+        let src0_reg = self.load_reg(src[0], [str, "src_0"].join("_").as_str());
+        let src1_reg = self.load_reg(src[1], [str, "src_1"].join("_").as_str());
+        let dst_reg = self.llvm_builder.build_binop(op, src0_reg, src1_reg,
             [str, "dst"].join("_").as_str());
-        self.llvm_builder.build_store(dst_reg, dst_llval);
+        self.store_reg(dst[0], dst_reg);
     }
 
     fn translate_call(
@@ -503,72 +511,90 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 self.llvm_builder.load_store(src_llty, src_llval, dst_llval);
             }
             Operation::Add => {
-                translate_arithm_impl(self, dst, op, src, "add");
+                translate_arithm_impl(&self, dst, src, "add",llvm_sys::LLVMOpcode::LLVMAdd);
             }
             Operation::Sub => {
-                translate_arithm_impl(self, dst, op, src, "sub");
+                translate_arithm_impl(&self, dst, src, "sub",llvm_sys::LLVMOpcode::LLVMSub);
             }
             Operation::Mul => {
-                translate_arithm_impl(self, dst, op, src, "mul");
+                translate_arithm_impl(&self, dst, src, "mul",llvm_sys::LLVMOpcode::LLVMMul);
             }
-            Operation::Div => todo!(),
-            Operation::Mod => todo!(),
-            Operation::BitOr => todo!(),
-            Operation::BitAnd => todo!(),
-            Operation::Xor => todo!(),
-            Operation::Shl => todo!(),
-            Operation::Shr => todo!(),
+            Operation::Div => {
+                translate_arithm_impl(&self, dst, src, "div",llvm_sys::LLVMOpcode::LLVMSDiv);
+            }
+            Operation::Mod => {
+                translate_arithm_impl(&self, dst, src, "mod",llvm_sys::LLVMOpcode::LLVMSRem);
+            }
+            Operation::BitOr => {
+                translate_arithm_impl(&self, dst, src, "or",llvm_sys::LLVMOpcode::LLVMOr);
+            }
+            Operation::BitAnd => {
+                translate_arithm_impl(&self, dst, src, "and",llvm_sys::LLVMOpcode::LLVMAnd);
+            }
+            Operation::Xor => {
+                translate_arithm_impl(&self, dst, src, "xor",llvm_sys::LLVMOpcode::LLVMXor);
+            }
+            Operation::Shl => {
+                translate_arithm_impl(&self, dst, src, "shl",llvm_sys::LLVMOpcode::LLVMShl);
+            }
+            Operation::Shr => {
+                translate_arithm_impl(&self, dst, src, "shr",llvm_sys::LLVMOpcode::LLVMShr);
+            }
+            Operation::Lt => {
+                assert_eq!(dst.len(), 1);
+                assert_eq!(src.len(), 2);
+                let src0_reg = self.load_reg(src[0], "lt_src_0");
+                let src1_reg = self.load_reg(src[1], "lt_src_1");
+                // FIXME: All comparisons are unsigned. Is this correct?
+                let dst_reg = self.llvm_builder.build_compare(llvm::LLVMIntPredicate::LLVMIntULT, src0_reg, src1_reg, "lt_dst");
+                self.store_reg(dst[0], dst_reg);
+            }
+            Operation::Gt => {
+                assert_eq!(dst.len(), 1);
+                assert_eq!(src.len(), 2);
+                let src0_reg = self.load_reg(src[0], "gt_src_0");
+                let src1_reg = self.load_reg(src[1], "gt_src_1");
+                // FIXME: All comparisons are unsigned. Is this correct?
+                let dst_reg = self.llvm_builder.build_compare(llvm::LLVMIntPredicate::LLVMIntUGT, src0_reg, src1_reg, "gt_dst");
+                self.store_reg(dst[0], dst_reg);
+            }
+            Operation::Le => {
+                assert_eq!(dst.len(), 1);
+                assert_eq!(src.len(), 2);
+                let src0_reg = self.load_reg(src[0], "le_src_0");
+                let src1_reg = self.load_reg(src[1], "le_src_1");
+                // FIXME: All comparisons are unsigned. Is this correct?
+                let dst_reg = self.llvm_builder.build_compare(llvm::LLVMIntPredicate::LLVMIntULE, src0_reg, src1_reg, "le_dst");
+                self.store_reg(dst[0], dst_reg);
+            }
+            Operation::Ge => {
+                assert_eq!(dst.len(), 1);
+                assert_eq!(src.len(), 2);
+                let src0_reg = self.load_reg(src[0], "ge_src_0");
+                let src1_reg = self.load_reg(src[1], "ge_src_1");
+                // FIXME: All comparisons are unsigned. Is this correct?
+                let dst_reg = self.llvm_builder.build_compare(llvm::LLVMIntPredicate::LLVMIntUGE, src0_reg, src1_reg, "ge_dst");
+                self.store_reg(dst[0], dst_reg);
+            }
             Operation::Eq => {
                 assert_eq!(dst.len(), 1);
                 assert_eq!(src.len(), 2);
-                let dst_idx = dst[0];
-                let src0_idx = src[0];
-                let src1_idx = src[1];
-                let dst_llval = self.locals[dst_idx].llval;
-                let src0_llval = self.locals[src0_idx].llval;
-                let src1_llval = self.locals[src1_idx].llval;
-                let mty = &self.locals[src0_idx].mty;
-                let llty = self.locals[src0_idx].llty;
-                match mty {
-                    mty::Type::Primitive(mty::PrimitiveType::U8) => {
-                        self.llvm_builder.load_icmp_store(
-                            llty,
-                            src0_llval,
-                            src1_llval,
-                            dst_llval,
-                            llvm::LLVMIntPredicate::LLVMIntEQ,
-                        );
-                    }
-                    mty::Type::Primitive(mty::PrimitiveType::U32) => {
-                        self.llvm_builder.load_icmp_store(
-                            llty,
-                            src0_llval,
-                            src1_llval,
-                            dst_llval,
-                            llvm::LLVMIntPredicate::LLVMIntEQ,
-                        );
-                    }
-                    mty::Type::Primitive(mty::PrimitiveType::U64) => {
-                        self.llvm_builder.load_icmp_store(
-                            llty,
-                            src0_llval,
-                            src1_llval,
-                            dst_llval,
-                            llvm::LLVMIntPredicate::LLVMIntEQ,
-                        );
-                    }
-                    mty::Type::Primitive(mty::PrimitiveType::U128) => {
-                        self.llvm_builder.load_icmp_store(
-                            llty,
-                            src0_llval,
-                            src1_llval,
-                            dst_llval,
-                            llvm::LLVMIntPredicate::LLVMIntEQ,
-                        );
-                    }
-                    _ => todo!(),
-                }
+                let src0_reg = self.load_reg(src[0], "eq_src_0");
+                let src1_reg = self.load_reg(src[1], "eq_src_1");
+                // FIXME: All comparisons are unsigned. Is this correct?
+                let dst_reg = self.llvm_builder.build_compare(llvm::LLVMIntPredicate::LLVMIntEQ, src0_reg, src1_reg, "eq_dst");
+                self.store_reg(dst[0], dst_reg);
             }
+            Operation::Neq => {
+                assert_eq!(dst.len(), 1);
+                assert_eq!(src.len(), 2);
+                let src0_reg = self.load_reg(src[0], "ne_src_0");
+                let src1_reg = self.load_reg(src[1], "ne_src_1");
+                // FIXME: All comparisons are unsigned. Is this correct?
+                let dst_reg = self.llvm_builder.build_compare(llvm::LLVMIntPredicate::LLVMIntNE, src0_reg, src1_reg, "ne_dst");
+                self.store_reg(dst[0], dst_reg);
+            }
+
             _ => todo!("{op:?}"),
         }
     }
