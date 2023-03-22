@@ -408,6 +408,34 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         }
     }
 
+    fn translate_arithm_impl(
+        &self,
+        dst: &[mast::TempIndex],
+        op: &sbc::Operation,
+        src: &[mast::TempIndex],
+        name: &str,
+    ) {
+        assert_eq!(dst.len(), 1);
+        assert_eq!(src.len(), 2);
+        let dst_idx = dst[0];
+        let src0_idx = src[0];
+        let src1_idx = src[1];
+        let dst_llval = self.locals[dst_idx].llval;
+        let src0_llval = self.locals[src0_idx].llval;
+        let src1_llval = self.locals[src1_idx].llval;
+        let src0_ty = self.locals[src0_idx].llty;
+        let src1_ty = self.locals[src0_idx].llty;
+        let src0_reg = self
+            .llvm_builder
+            .build_load(src0_ty, src0_llval, [str, "src_0"].join("_").as_str());
+        let src1_reg = self
+            .llvm_builder
+            .build_load(src1_ty, src1_llval, [str, "src_1"].join("_").as_str());
+        let dst_reg = self.llvm_builder.build_add(src0_reg, src1_reg,
+            [str, "dst"].join("_").as_str());
+        self.llvm_builder.build_store(dst_reg, dst_llval);
+    }
+
     fn translate_call(
         &self,
         dst: &[mast::TempIndex],
@@ -475,64 +503,13 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 self.llvm_builder.load_store(src_llty, src_llval, dst_llval);
             }
             Operation::Add => {
-                assert_eq!(dst.len(), 1);
-                assert_eq!(src.len(), 2);
-                let dst_idx = dst[0];
-                let src0_idx = src[0];
-                let src1_idx = src[1];
-                let dst_llval = self.locals[dst_idx].llval;
-                let src0_llval = self.locals[src0_idx].llval;
-                let src1_llval = self.locals[src1_idx].llval;
-                let src0_ty = self.locals[src0_idx].llty;
-                let src1_ty = self.locals[src0_idx].llty;
-                let src0_reg = self
-                    .llvm_builder
-                    .build_load(src0_ty, src0_llval, "add_src_0");
-                let src1_reg = self
-                    .llvm_builder
-                    .build_load(src1_ty, src1_llval, "add_src_1");
-                let dst_reg = self.llvm_builder.build_add(src0_reg, src1_reg, "add_dst");
-                self.llvm_builder.build_store(dst_reg, dst_llval);
+                translate_arithm_impl(self, dst, op, src, "add");
             }
             Operation::Sub => {
-                assert_eq!(dst.len(), 1);
-                assert_eq!(src.len(), 2);
-                let dst_idx = dst[0];
-                let src0_idx = src[0];
-                let src1_idx = src[1];
-                let dst_llval = self.locals[dst_idx].llval;
-                let src0_llval = self.locals[src0_idx].llval;
-                let src1_llval = self.locals[src1_idx].llval;
-                let src0_ty = self.locals[src0_idx].llty;
-                let src1_ty = self.locals[src0_idx].llty;
-                let src0_reg = self
-                    .llvm_builder
-                    .build_load(src0_ty, src0_llval, "sub_src_0");
-                let src1_reg = self
-                    .llvm_builder
-                    .build_load(src1_ty, src1_llval, "sub_src_1");
-                let dst_reg = self.llvm_builder.build_sub(src0_reg, src1_reg, "sub_dst");
-                self.llvm_builder.build_store(dst_reg, dst_llval);
+                translate_arithm_impl(self, dst, op, src, "sub");
             }
             Operation::Mul => {
-                assert_eq!(dst.len(), 1);
-                assert_eq!(src.len(), 2);
-                let dst_idx = dst[0];
-                let src0_idx = src[0];
-                let src1_idx = src[1];
-                let dst_llval = self.locals[dst_idx].llval;
-                let src0_llval = self.locals[src0_idx].llval;
-                let src1_llval = self.locals[src1_idx].llval;
-                let src0_ty = self.locals[src0_idx].llty;
-                let src1_ty = self.locals[src0_idx].llty;
-                let src0_reg = self
-                    .llvm_builder
-                    .build_load(src0_ty, src0_llval, "mul_src_0");
-                let src1_reg = self
-                    .llvm_builder
-                    .build_load(src1_ty, src1_llval, "mul_src_1");
-                let dst_reg = self.llvm_builder.build_mul(src0_reg, src1_reg, "mul_dst");
-                self.llvm_builder.build_store(dst_reg, dst_llval);
+                translate_arithm_impl(self, dst, op, src, "mul");
             }
             Operation::Div => todo!(),
             Operation::Mod => todo!(),
