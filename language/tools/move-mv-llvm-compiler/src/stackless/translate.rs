@@ -455,6 +455,48 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         self.llvm_builder.build_store(dst_reg, dst_llval);
     }
 
+    fn emit_precond_for_shift(
+        &self,
+        src1_idx: mast::TempIndex,
+        src1_reg: LLVMValueRef,
+    ) {
+        use move_core_types::vm_status::StatusCode;
+        // Generate the following LLVM IR to check that the shift count is in range.
+        //   ...
+        //   %rangecond = icmp uge {i8/32/64/128} %n_bits, {8/32/64/128}
+        //   br i1 %rangecond, %rangechk_abort, %rangechk_join
+        // then_bb:
+        //   call void @move_rt_abort(i64 AIRTHMETIC_ERROR)
+        //   unreachable
+        // join_bb:
+        //  ...
+        //
+
+        // Generate the range check compare.
+        let builder = &self.llvm_builder;
+        let src1_llty = &self.locals[src1_idx].llty;
+        let src1_width = src1_llty.get_int_type_width();
+        let const_llval = llvm::Constant::generic_int(*src1_llty, src1_width as u128).get0();
+        let rangechk_cond_reg = self.llvm_builder.build_compare(
+            llvm::LLVMIntPredicate::LLVMIntUGE,
+            src1_reg,
+            const_llval,
+            "rangecond",
+        );
+
+        // Generate and insert the two new basic blocks.
+        let curr_bb = builder.get_insert_block();
+        let parent_func = curr_bb.get_basic_block_parent();
+        let then_bb = parent_func.insert_basic_block_after(curr_bb, "then_bb");
+        let join_bb = parent_func.insert_basic_block_after(then_bb, "join_bb");
+
+        // Generate the conditional branch and call to abort.
+        builder.build_cond_br(rangechk_cond_reg, then_bb, join_bb);
+        builder.position_at_end(then_bb);
+        self.emit_rtcall_abort_raw(StatusCode::ARITHMETIC_ERROR as u64);
+        builder.position_at_end(join_bb);
+    }
+
     fn translate_arithm_impl(
         &self,
         dst: &[mast::TempIndex],
@@ -466,6 +508,11 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         assert_eq!(src.len(), 2);
         let src0_reg = self.load_reg(src[0], &format!("{name}_src_0"));
         let src1_reg = self.load_reg(src[1], &format!("{name}_src_1"));
+
+        if op == llvm_sys::LLVMOpcode::LLVMLShr || op == llvm_sys::LLVMOpcode::LLVMShl {
+            self.emit_precond_for_shift(src[1], src1_reg);
+        }
+
         let dst_reg = self
             .llvm_builder
             .build_binop(op, src0_reg, src1_reg, &format!("{name}_dst"));
@@ -819,6 +866,33 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 .add_function_with_attrs(&name, llty, &attrs);
             llfn
         }
+    }
+
+    fn emit_rtcall_abort_raw(&self, val: u64) {
+        // TODO: Refactor get_runtime_function to avoid the below partial duplication.
+        let name = "move_rt_abort";
+        let llfn = self.llvm_module.get_named_function(&name);
+        let thefn = if let Some(llfn) = llfn {
+            llfn
+        } else {
+            let (llty, attrs) = {
+                let ret_ty = self.llvm_cx.void_type();
+                let param_tys = &[self.llvm_cx.int64_type()];
+                let llty = llvm::FunctionType::new(ret_ty, param_tys);
+                let attrs = vec![llvm::AttributeKind::NoReturn];
+                (llty, attrs)
+            };
+
+            let llfn = self
+                .llvm_module
+                .add_function_with_attrs(&name, llty, &attrs);
+            llfn
+        };
+        //
+        let param_ty = self.llvm_cx.int64_type();
+        let const_llval = llvm::Constant::generic_int(param_ty, val as u128);
+        self.llvm_builder.build_call_imm(thefn, &[const_llval]);
+        self.llvm_builder.build_unreachable();
     }
 }
 
