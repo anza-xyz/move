@@ -337,9 +337,7 @@ impl Builder {
             let mut args = args
                 .iter()
                 .enumerate()
-                .map(|(_i, val)| {
-                    val.0
-                })
+                .map(|(_i, val)| val.0)
                 .collect::<Vec<_>>();
             LLVMBuildCall2(
                 self.0,

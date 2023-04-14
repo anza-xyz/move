@@ -464,9 +464,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         // Generate the following LLVM IR to check that the shift count is in range.
         //   ...
         //   %rangecond = icmp uge {i8/32/64/128} %n_bits, {8/32/64/128}
-        //   br i1 %rangecond, %rangechk_abort, %rangechk_join
+        //   br i1 %rangecond, %then_bb, %join_bb
         // then_bb:
-        //   call void @move_rt_abort(i64 AIRTHMETIC_ERROR)
+        //   call void @move_rt_abort(i64 ARITHMETIC_ERROR)
         //   unreachable
         // join_bb:
         //  ...
@@ -477,7 +477,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         let src1_llty = &self.locals[src1_idx].llty;
         let src1_width = src1_llty.get_int_type_width();
         let const_llval = llvm::Constant::generic_int(*src1_llty, src1_width as u128).get0();
-        let rangechk_cond_reg = self.llvm_builder.build_compare(
+        let rangechk_cond_reg = builder.build_compare(
             llvm::LLVMIntPredicate::LLVMIntUGE,
             src1_reg,
             const_llval,
@@ -503,15 +503,14 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         src: &[mast::TempIndex],
         name: &str,
         op: llvm_sys::LLVMOpcode,
+        precond_emitter_fn: fn(&Self, mast::TempIndex, LLVMValueRef) -> (),
     ) {
         assert_eq!(dst.len(), 1);
         assert_eq!(src.len(), 2);
         let src0_reg = self.load_reg(src[0], &format!("{name}_src_0"));
         let src1_reg = self.load_reg(src[1], &format!("{name}_src_1"));
 
-        if op == llvm_sys::LLVMOpcode::LLVMLShr || op == llvm_sys::LLVMOpcode::LLVMShl {
-            self.emit_precond_for_shift(src[1], src1_reg);
-        }
+        precond_emitter_fn(self, src[1], src1_reg);
 
         let dst_reg = self
             .llvm_builder
@@ -586,34 +585,34 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 self.llvm_builder.load_store(src_llty, src_llval, dst_llval);
             }
             Operation::Add => {
-                self.translate_arithm_impl(dst, src, "add", llvm_sys::LLVMOpcode::LLVMAdd);
+                self.translate_arithm_impl(dst, src, "add", llvm_sys::LLVMOpcode::LLVMAdd, |_,_,_| ());
             }
             Operation::Sub => {
-                self.translate_arithm_impl(dst, src, "sub", llvm_sys::LLVMOpcode::LLVMSub);
+                self.translate_arithm_impl(dst, src, "sub", llvm_sys::LLVMOpcode::LLVMSub, |_,_,_| ());
             }
             Operation::Mul => {
-                self.translate_arithm_impl(dst, src, "mul", llvm_sys::LLVMOpcode::LLVMMul);
+                self.translate_arithm_impl(dst, src, "mul", llvm_sys::LLVMOpcode::LLVMMul, |_,_,_| ());
             }
             Operation::Div => {
-                self.translate_arithm_impl(dst, src, "div", llvm_sys::LLVMOpcode::LLVMSDiv);
+                self.translate_arithm_impl(dst, src, "div", llvm_sys::LLVMOpcode::LLVMSDiv, |_,_,_| ());
             }
             Operation::Mod => {
-                self.translate_arithm_impl(dst, src, "mod", llvm_sys::LLVMOpcode::LLVMSRem);
+                self.translate_arithm_impl(dst, src, "mod", llvm_sys::LLVMOpcode::LLVMSRem, |_,_,_| ());
             }
             Operation::BitOr => {
-                self.translate_arithm_impl(dst, src, "or", llvm_sys::LLVMOpcode::LLVMOr);
+                self.translate_arithm_impl(dst, src, "or", llvm_sys::LLVMOpcode::LLVMOr, |_,_,_| ());
             }
             Operation::BitAnd => {
-                self.translate_arithm_impl(dst, src, "and", llvm_sys::LLVMOpcode::LLVMAnd);
+                self.translate_arithm_impl(dst, src, "and", llvm_sys::LLVMOpcode::LLVMAnd, |_,_,_| ());
             }
             Operation::Xor => {
-                self.translate_arithm_impl(dst, src, "xor", llvm_sys::LLVMOpcode::LLVMXor);
+                self.translate_arithm_impl(dst, src, "xor", llvm_sys::LLVMOpcode::LLVMXor, |_,_,_| ());
             }
             Operation::Shl => {
-                self.translate_arithm_impl(dst, src, "shl", llvm_sys::LLVMOpcode::LLVMShl);
+                self.translate_arithm_impl(dst, src, "shl", llvm_sys::LLVMOpcode::LLVMShl, Self::emit_precond_for_shift);
             }
             Operation::Shr => {
-                self.translate_arithm_impl(dst, src, "shr", llvm_sys::LLVMOpcode::LLVMLShr);
+                self.translate_arithm_impl(dst, src, "shr", llvm_sys::LLVMOpcode::LLVMLShr, Self::emit_precond_for_shift);
             }
             Operation::Lt => {
                 assert_eq!(dst.len(), 1);
@@ -672,10 +671,10 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 self.store_reg(dst[0], dst_reg);
             }
             Operation::Or => { // Logical Or
-                self.translate_arithm_impl(dst, src, "or", llvm_sys::LLVMOpcode::LLVMOr);
+                self.translate_arithm_impl(dst, src, "or", llvm_sys::LLVMOpcode::LLVMOr, |_,_,_| ());
             }
             Operation::And => { // Logical And
-                self.translate_arithm_impl(dst, src, "and", llvm_sys::LLVMOpcode::LLVMAnd);
+                self.translate_arithm_impl(dst, src, "and", llvm_sys::LLVMOpcode::LLVMAnd, |_,_,_| ());
             }
             Operation::Eq => {
                 assert_eq!(dst.len(), 1);
