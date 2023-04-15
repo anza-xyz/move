@@ -63,6 +63,11 @@ struct Args {
     /// Output an object file
     #[clap(short = 'O')]
     pub obj: bool,
+
+    /// Output GraphViz dot graph files for each CFG
+    /// (1: gen dot files, 2: invoke xdot viewer on files)"
+    #[clap(long = "gen-dot-cfg", default_value = "0")]
+    pub gen_dot_cfg: u8,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -172,7 +177,7 @@ fn main() -> anyhow::Result<()> {
             .map(|m| m.get_id())
             .expect(".");
         let global_cx = GlobalContext::new(&model_env, Target::Solana);
-        let mod_cx = global_cx.create_module_context(mod_id);
+        let mod_cx = global_cx.create_module_context(mod_id, args.gen_dot_cfg);
         let mut llmod = mod_cx.translate();
         if !args.obj {
             llvm_write_to_file(llmod.as_mut(), args.llvm_ir, &args.output_file_path)?;
