@@ -37,6 +37,7 @@ use move_stackless_bytecode::{
     stackless_bytecode as sbc, stackless_bytecode_generator::StacklessBytecodeGenerator,
     stackless_control_flow_graph::generate_cfg_in_dot_format,
 };
+use move_core_types::vm_status::StatusCode::ARITHMETIC_ERROR;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Copy, Clone)]
@@ -276,6 +277,9 @@ struct Local {
     llval: llvm::Alloca,
 }
 
+// The boolean is passed as true for a pre-condtion emitter or false for a post-condition emitter.
+type CheckEmitterFn<'mm, 'up> = (fn(&FunctionContext<'mm, 'up>, &[Option<(mast::TempIndex, LLVMValueRef)>]) -> (), bool);
+
 impl<'mm, 'up> FunctionContext<'mm, 'up> {
     fn translate(mut self, dot_info: &'up String) {
         let fn_data = StacklessBytecodeGenerator::new(&self.env).generate_function();
@@ -480,13 +484,31 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         self.llvm_builder.build_store(dst_reg, dst_llval);
     }
 
+    fn emit_prepost_new_blocks_with_abort(
+        &self,
+        cond_reg: LLVMValueRef,
+    ) {
+        // All pre- and post-condition emitters generate the same conditional structure.
+
+        // Generate and insert the two new basic blocks.
+        let builder = &self.llvm_builder;
+        let curr_bb = builder.get_insert_block();
+        let parent_func = curr_bb.get_basic_block_parent();
+        let then_bb = parent_func.insert_basic_block_after(curr_bb, "then_bb");
+        let join_bb = parent_func.insert_basic_block_after(then_bb, "join_bb");
+
+        // Generate the conditional branch and call to abort.
+        builder.build_cond_br(cond_reg, then_bb, join_bb);
+        builder.position_at_end(then_bb);
+        self.emit_rtcall_abort_raw(ARITHMETIC_ERROR as u64);
+        builder.position_at_end(join_bb);
+    }
+
     fn emit_precond_for_shift(
         &self,
-        src1_idx: mast::TempIndex,
-        src1_reg: LLVMValueRef,
+        args: &[Option<(mast::TempIndex, LLVMValueRef)>], // src0, src1, dst.
     ) {
-        use move_core_types::vm_status::StatusCode;
-        // Generate the following LLVM IR to check that the shift count is in range.
+        // Generate the following LLVM IR to pre-check that the shift count is in range.
         //   ...
         //   %rangecond = icmp uge {i8/32/64/128} %n_bits, {8/32/64/128}
         //   br i1 %rangecond, %then_bb, %join_bb
@@ -498,28 +520,105 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         //
 
         // Generate the range check compare.
-        let builder = &self.llvm_builder;
-        let src1_llty = &self.locals[src1_idx].llty;
+        let src1 = args[1].unwrap();
+        let src1_llty = &self.locals[src1.0].llty;
         let src1_width = src1_llty.get_int_type_width();
         let const_llval = llvm::Constant::generic_int(*src1_llty, src1_width as u128).get0();
-        let rangechk_cond_reg = builder.build_compare(
+        let cond_reg = self.llvm_builder.build_compare(
             llvm::LLVMIntPredicate::LLVMIntUGE,
-            src1_reg,
+            src1.1,
             const_llval,
             "rangecond",
         );
 
-        // Generate and insert the two new basic blocks.
-        let curr_bb = builder.get_insert_block();
-        let parent_func = curr_bb.get_basic_block_parent();
-        let then_bb = parent_func.insert_basic_block_after(curr_bb, "then_bb");
-        let join_bb = parent_func.insert_basic_block_after(then_bb, "join_bb");
+        self.emit_prepost_new_blocks_with_abort(cond_reg);
+    }
 
-        // Generate the conditional branch and call to abort.
-        builder.build_cond_br(rangechk_cond_reg, then_bb, join_bb);
-        builder.position_at_end(then_bb);
-        self.emit_rtcall_abort_raw(StatusCode::ARITHMETIC_ERROR as u64);
-        builder.position_at_end(join_bb);
+    fn emit_postcond_for_add(
+        &self,
+        args: &[Option<(mast::TempIndex, LLVMValueRef)>], // src0, src1, dst.
+    ) {
+        // Generate the following LLVM IR to check that unsigned addition did not overflow.
+        // This is indicated when the unsigned sum is less than the first input.
+        //   ...
+        //   %ovfcond = icmp ult {i8/32/64/128} %add_dst, %add_src0
+        //   br i1 %ovfcond, %then_bb, %join_bb
+        // then_bb:
+        //   call void @move_rt_abort(i64 ARITHMETIC_ERROR)
+        //   unreachable
+        // join_bb:
+        //  ...
+        //
+
+        // Generate the overflow check compare.
+        let src0 = args[0].unwrap();
+        let dst = args[2].unwrap();
+        let cond_reg = self.llvm_builder.build_compare(
+            llvm::LLVMIntPredicate::LLVMIntULT,
+            dst.1,
+            src0.1,
+            "ovfcond",
+        );
+
+        self.emit_prepost_new_blocks_with_abort(cond_reg);
+    }
+
+    fn emit_postcond_for_sub(
+        &self,
+        args: &[Option<(mast::TempIndex, LLVMValueRef)>], // src0, src1, dst.
+    ) {
+        // Generate the following LLVM IR to check that unsigned subtraction did not overflow.
+        // This is indicated when the unsigned difference is greater than the first input.
+        //   ...
+        //   %ovfcond = icmp ugt {i8/32/64/128} %sub_dst, %sub_src0
+        //   br i1 %ovfcond, %then_bb, %join_bb
+        // then_bb:
+        //   call void @move_rt_abort(i64 ARITHMETIC_ERROR)
+        //   unreachable
+        // join_bb:
+        //  ...
+        //
+
+        // Generate the overflow check compare.
+        let src0 = args[0].unwrap();
+        let dst = args[2].unwrap();
+        let cond_reg = self.llvm_builder.build_compare(
+            llvm::LLVMIntPredicate::LLVMIntUGT,
+            dst.1,
+            src0.1,
+            "ovfcond",
+        );
+
+        self.emit_prepost_new_blocks_with_abort(cond_reg);
+    }
+
+    fn emit_precond_for_div(
+        &self,
+        args: &[Option<(mast::TempIndex, LLVMValueRef)>], // src0, src1, dst.
+    ) {
+        // Generate the following LLVM IR to check that the divisor is not zero.
+        //   ...
+        //   %zerocond = icmp eq {i8/32/64/128} %div_src1, 0
+        //   br i1 %zerocond, %then_bb, %join_bb
+        // then_bb:
+        //   call void @move_rt_abort(i64 ARITHMETIC_ERROR)
+        //   unreachable
+        // join_bb:
+        //  ...
+        //
+
+        // Generate the zero check compare.
+        let src1 = args[1].unwrap();
+        let src1_llty = &self.locals[src1.0].llty;
+        let const_llval = llvm::Constant::generic_int(*src1_llty, 0).get0();
+        let cond_reg = self.llvm_builder.build_compare(
+            llvm::LLVMIntPredicate::LLVMIntEQ,
+            src1.1,
+            const_llval,
+            "zerocond",
+        );
+
+        self.emit_prepost_new_blocks_with_abort(cond_reg);
     }
 
     fn translate_arithm_impl(
@@ -528,14 +627,18 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         src: &[mast::TempIndex],
         name: &str,
         op: llvm_sys::LLVMOpcode,
-        precond_emitter_fn: fn(&Self, mast::TempIndex, LLVMValueRef) -> (),
+        dyncheck_emitter_fn: CheckEmitterFn<'mm, 'up>,
     ) {
         assert_eq!(dst.len(), 1);
         assert_eq!(src.len(), 2);
         let src0_reg = self.load_reg(src[0], &format!("{name}_src_0"));
         let mut src1_reg = self.load_reg(src[1], &format!("{name}_src_1"));
 
-        precond_emitter_fn(self, src[1], src1_reg);
+        // Emit any dynamic pre-condition checking code.
+        if dyncheck_emitter_fn.1 {
+            let args = [Some((src[0], src0_reg)), Some((src[1], src1_reg)), None];
+            dyncheck_emitter_fn.0(self, &args);
+        }
 
         // LLVM IR requires binary operators to have the same type. On the other hand, the Move language
         // insists that shift operators only take u8 for the shift count. Extend src1 when its type does
@@ -553,6 +656,13 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         let dst_reg = self
             .llvm_builder
             .build_binop(op, src0_reg, src1_reg, &format!("{name}_dst"));
+
+        // Emit any dynamic post-condition checking code.
+        if !dyncheck_emitter_fn.1 {
+            let args = [Some((src[0], src0_reg)), None, Some((dst[0], dst_reg))];
+            dyncheck_emitter_fn.0(self, &args);
+        }
+
         self.store_reg(dst[0], dst_reg);
     }
 
@@ -563,6 +673,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         src: &[mast::TempIndex],
     ) {
         use sbc::Operation;
+        let emitter_nop: CheckEmitterFn = (|_,_| (), true);
         match op {
             Operation::Function(mod_id, fun_id, types) => {
                 self.translate_fun_call(*mod_id, *fun_id, types, dst, src);
@@ -623,34 +734,34 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 self.llvm_builder.load_store(src_llty, src_llval, dst_llval);
             }
             Operation::Add => {
-                self.translate_arithm_impl(dst, src, "add", llvm_sys::LLVMOpcode::LLVMAdd, |_,_,_| ());
+                self.translate_arithm_impl(dst, src, "add", llvm_sys::LLVMOpcode::LLVMAdd, (Self::emit_postcond_for_add, false));
             }
             Operation::Sub => {
-                self.translate_arithm_impl(dst, src, "sub", llvm_sys::LLVMOpcode::LLVMSub, |_,_,_| ());
+                self.translate_arithm_impl(dst, src, "sub", llvm_sys::LLVMOpcode::LLVMSub, (Self::emit_postcond_for_sub, false));
             }
             Operation::Mul => {
-                self.translate_arithm_impl(dst, src, "mul", llvm_sys::LLVMOpcode::LLVMMul, |_,_,_| ());
+                self.translate_arithm_impl(dst, src, "mul", llvm_sys::LLVMOpcode::LLVMMul, emitter_nop);
             }
             Operation::Div => {
-                self.translate_arithm_impl(dst, src, "div", llvm_sys::LLVMOpcode::LLVMUDiv, |_,_,_| ());
+                self.translate_arithm_impl(dst, src, "div", llvm_sys::LLVMOpcode::LLVMUDiv, (Self::emit_precond_for_div, true));
             }
             Operation::Mod => {
-                self.translate_arithm_impl(dst, src, "mod", llvm_sys::LLVMOpcode::LLVMURem, |_,_,_| ());
+                self.translate_arithm_impl(dst, src, "mod", llvm_sys::LLVMOpcode::LLVMURem, emitter_nop);
             }
             Operation::BitOr => {
-                self.translate_arithm_impl(dst, src, "or", llvm_sys::LLVMOpcode::LLVMOr, |_,_,_| ());
+                self.translate_arithm_impl(dst, src, "or", llvm_sys::LLVMOpcode::LLVMOr, emitter_nop);
             }
             Operation::BitAnd => {
-                self.translate_arithm_impl(dst, src, "and", llvm_sys::LLVMOpcode::LLVMAnd, |_,_,_| ());
+                self.translate_arithm_impl(dst, src, "and", llvm_sys::LLVMOpcode::LLVMAnd, emitter_nop);
             }
             Operation::Xor => {
-                self.translate_arithm_impl(dst, src, "xor", llvm_sys::LLVMOpcode::LLVMXor, |_,_,_| ());
+                self.translate_arithm_impl(dst, src, "xor", llvm_sys::LLVMOpcode::LLVMXor, emitter_nop);
             }
             Operation::Shl => {
-                self.translate_arithm_impl(dst, src, "shl", llvm_sys::LLVMOpcode::LLVMShl, Self::emit_precond_for_shift);
+                self.translate_arithm_impl(dst, src, "shl", llvm_sys::LLVMOpcode::LLVMShl, (Self::emit_precond_for_shift, true));
             }
             Operation::Shr => {
-                self.translate_arithm_impl(dst, src, "shr", llvm_sys::LLVMOpcode::LLVMLShr, Self::emit_precond_for_shift);
+                self.translate_arithm_impl(dst, src, "shr", llvm_sys::LLVMOpcode::LLVMLShr, (Self::emit_precond_for_shift, true));
             }
             Operation::Lt => {
                 assert_eq!(dst.len(), 1);
@@ -709,10 +820,10 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 self.store_reg(dst[0], dst_reg);
             }
             Operation::Or => { // Logical Or
-                self.translate_arithm_impl(dst, src, "or", llvm_sys::LLVMOpcode::LLVMOr, |_,_,_| ());
+                self.translate_arithm_impl(dst, src, "or", llvm_sys::LLVMOpcode::LLVMOr, emitter_nop);
             }
             Operation::And => { // Logical And
-                self.translate_arithm_impl(dst, src, "and", llvm_sys::LLVMOpcode::LLVMAnd, |_,_,_| ());
+                self.translate_arithm_impl(dst, src, "and", llvm_sys::LLVMOpcode::LLVMAnd, emitter_nop);
             }
             Operation::Eq => {
                 assert_eq!(dst.len(), 1);
