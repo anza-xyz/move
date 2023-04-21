@@ -32,12 +32,12 @@
 
 use crate::stackless::{extensions::*, llvm};
 use llvm_sys::prelude::LLVMValueRef;
+use move_core_types::vm_status::StatusCode::ARITHMETIC_ERROR;
 use move_model::{ast as mast, model as mm, ty as mty};
 use move_stackless_bytecode::{
     stackless_bytecode as sbc, stackless_bytecode_generator::StacklessBytecodeGenerator,
     stackless_control_flow_graph::generate_cfg_in_dot_format,
 };
-use move_core_types::vm_status::StatusCode::ARITHMETIC_ERROR;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Copy, Clone)]
@@ -277,8 +277,15 @@ struct Local {
     llval: llvm::Alloca,
 }
 
-// The boolean is passed as true for a pre-condtion emitter or false for a post-condition emitter.
-type CheckEmitterFn<'mm, 'up> = (fn(&FunctionContext<'mm, 'up>, &[Option<(mast::TempIndex, LLVMValueRef)>]) -> (), bool);
+#[derive(PartialEq)]
+pub enum EmitterFnKind {
+    PreCheck,
+    PostCheck,
+}
+type CheckEmitterFn<'mm, 'up> = (
+    fn(&FunctionContext<'mm, 'up>, &[Option<(mast::TempIndex, LLVMValueRef)>]) -> (),
+    EmitterFnKind,
+);
 
 impl<'mm, 'up> FunctionContext<'mm, 'up> {
     fn translate(mut self, dot_info: &'up String) {
@@ -484,10 +491,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         self.llvm_builder.build_store(dst_reg, dst_llval);
     }
 
-    fn emit_prepost_new_blocks_with_abort(
-        &self,
-        cond_reg: LLVMValueRef,
-    ) {
+    fn emit_prepost_new_blocks_with_abort(&self, cond_reg: LLVMValueRef) {
         // All pre- and post-condition emitters generate the same conditional structure.
 
         // Generate and insert the two new basic blocks.
@@ -635,7 +639,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         let mut src1_reg = self.load_reg(src[1], &format!("{name}_src_1"));
 
         // Emit any dynamic pre-condition checking code.
-        if dyncheck_emitter_fn.1 {
+        if dyncheck_emitter_fn.1 == EmitterFnKind::PreCheck {
             let args = [Some((src[0], src0_reg)), Some((src[1], src1_reg)), None];
             dyncheck_emitter_fn.0(self, &args);
         }
@@ -649,7 +653,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
             assert_eq!(self.get_bitwidth(src1_mty), 8);
             let src0_width = self.get_bitwidth(src0_mty);
             if src0_width > 8 {
-                src1_reg = self.llvm_builder.build_zext(src1_reg, self.llvm_type(src0_mty).0, "zext_dst");
+                src1_reg =
+                    self.llvm_builder
+                        .build_zext(src1_reg, self.llvm_type(src0_mty).0, "zext_dst");
             }
         }
 
@@ -658,7 +664,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
             .build_binop(op, src0_reg, src1_reg, &format!("{name}_dst"));
 
         // Emit any dynamic post-condition checking code.
-        if !dyncheck_emitter_fn.1 {
+        if dyncheck_emitter_fn.1 == EmitterFnKind::PostCheck {
             let args = [Some((src[0], src0_reg)), None, Some((dst[0], dst_reg))];
             dyncheck_emitter_fn.0(self, &args);
         }
@@ -673,7 +679,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         src: &[mast::TempIndex],
     ) {
         use sbc::Operation;
-        let emitter_nop: CheckEmitterFn = (|_,_| (), true);
+        let emitter_nop: CheckEmitterFn = (|_, _| (), EmitterFnKind::PreCheck);
         match op {
             Operation::Function(mod_id, fun_id, types) => {
                 self.translate_fun_call(*mod_id, *fun_id, types, dst, src);
@@ -734,16 +740,16 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 self.llvm_builder.load_store(src_llty, src_llval, dst_llval);
             }
             Operation::Add => {
-                self.translate_arithm_impl(dst, src, "add", llvm_sys::LLVMOpcode::LLVMAdd, (Self::emit_postcond_for_add, false));
+                self.translate_arithm_impl(dst, src, "add", llvm_sys::LLVMOpcode::LLVMAdd, (Self::emit_postcond_for_add, EmitterFnKind::PostCheck));
             }
             Operation::Sub => {
-                self.translate_arithm_impl(dst, src, "sub", llvm_sys::LLVMOpcode::LLVMSub, (Self::emit_postcond_for_sub, false));
+                self.translate_arithm_impl(dst, src, "sub", llvm_sys::LLVMOpcode::LLVMSub, (Self::emit_postcond_for_sub, EmitterFnKind::PostCheck));
             }
             Operation::Mul => {
                 self.translate_arithm_impl(dst, src, "mul", llvm_sys::LLVMOpcode::LLVMMul, emitter_nop);
             }
             Operation::Div => {
-                self.translate_arithm_impl(dst, src, "div", llvm_sys::LLVMOpcode::LLVMUDiv, (Self::emit_precond_for_div, true));
+                self.translate_arithm_impl(dst, src, "div", llvm_sys::LLVMOpcode::LLVMUDiv, (Self::emit_precond_for_div, EmitterFnKind::PreCheck));
             }
             Operation::Mod => {
                 self.translate_arithm_impl(dst, src, "mod", llvm_sys::LLVMOpcode::LLVMURem, emitter_nop);
@@ -758,10 +764,10 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 self.translate_arithm_impl(dst, src, "xor", llvm_sys::LLVMOpcode::LLVMXor, emitter_nop);
             }
             Operation::Shl => {
-                self.translate_arithm_impl(dst, src, "shl", llvm_sys::LLVMOpcode::LLVMShl, (Self::emit_precond_for_shift, true));
+                self.translate_arithm_impl(dst, src, "shl", llvm_sys::LLVMOpcode::LLVMShl, (Self::emit_precond_for_shift, EmitterFnKind::PreCheck));
             }
             Operation::Shr => {
-                self.translate_arithm_impl(dst, src, "shr", llvm_sys::LLVMOpcode::LLVMLShr, (Self::emit_precond_for_shift, true));
+                self.translate_arithm_impl(dst, src, "shr", llvm_sys::LLVMOpcode::LLVMLShr, (Self::emit_precond_for_shift, EmitterFnKind::PreCheck));
             }
             Operation::Lt => {
                 assert_eq!(dst.len(), 1);
