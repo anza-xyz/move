@@ -369,8 +369,6 @@ impl Builder {
         stype: StructType,
     ) {
         unsafe {
-            //let tmp_reg = LLVMBuildLoad2(self.0, src.0.ptr_type().0, src.1.0, "tmp".cstr());
-            //let srcval = LLVMBuildLoad2(self.0, stype.0, tmp_reg, "srcval".cstr());
             assert_eq!(src.0 .0, stype.0);
             let srcval = LLVMBuildLoad2(self.0, stype.0, src.1 .0, "srcval".cstr());
 

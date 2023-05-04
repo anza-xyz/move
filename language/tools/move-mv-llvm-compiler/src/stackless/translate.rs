@@ -190,8 +190,6 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             .collect();
         all_structs.append(&mut local_structs);
 
-        //self.dump_all_structs(&all_structs, false);
-
         // Visit each struct definition, creating corresponding LLVM IR struct types.
         //
         // Note that struct defintions can depend on other struct definitions. Inconveniently, the
@@ -254,8 +252,6 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             ll_field_tys.push(self.llvm_cx.int8_type());
             ll_sty.set_struct_body(&ll_field_tys);
         }
-
-        //self.dump_all_structs(&all_structs, true);
     }
 
     fn ll_struct_name_from_raw_name(&self, s_env: &mm::StructEnv) -> String {
