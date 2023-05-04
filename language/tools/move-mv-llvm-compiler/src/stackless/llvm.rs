@@ -351,9 +351,9 @@ impl Builder {
                 .collect::<Vec<_>>();
 
             let mut agg_val = LLVMGetUndef(stype.0);
-            for i in 0..loads.len() {
+            for (i, ld) in loads.iter().enumerate() {
                 let s = format!("insert_{i}").cstr();
-                agg_val = LLVMBuildInsertValue(self.0, agg_val, loads[i], i as libc::c_uint, s);
+                agg_val = LLVMBuildInsertValue(self.0, agg_val, *ld, i as libc::c_uint, s);
             }
 
             assert_eq!(LLVMTypeOf(agg_val), dst.0 .0);

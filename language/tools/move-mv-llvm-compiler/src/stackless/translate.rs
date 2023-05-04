@@ -174,11 +174,9 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
                     .find_struct(m_env.symbol_pool().make(struct_view.name().as_str()))
                     .expect("undefined struct");
                 let qid = struct_env.get_qualified_id();
-                if qid.module_id != m_env.get_id() {
-                    if !visited.contains(&qid.module_id) {
-                        worklist.push_back(qid.module_id);
-                        external_sqids.insert(qid);
-                    }
+                if qid.module_id != m_env.get_id() && !visited.contains(&qid.module_id) {
+                    worklist.push_back(qid.module_id);
+                    external_sqids.insert(qid);
                 }
             }
             visited.insert(mid);
@@ -209,7 +207,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             if !s_env.get_type_parameters().is_empty() {
                 todo!("generic structs not yet implemented");
             }
-            let ll_name = self.ll_struct_name_from_raw_name(&s_env);
+            let ll_name = self.ll_struct_name_from_raw_name(s_env);
             self.llvm_cx.create_opaque_named_struct(&ll_name);
         }
 
@@ -239,7 +237,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             if !s_env.get_type_parameters().is_empty() {
                 todo!("generic structs not yet implemented");
             }
-            let ll_name = self.ll_struct_name_from_raw_name(&s_env);
+            let ll_name = self.ll_struct_name_from_raw_name(s_env);
             let ll_sty = self
                 .llvm_cx
                 .named_struct_type(&ll_name)
@@ -262,13 +260,13 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
 
     fn ll_struct_name_from_raw_name(&self, s_env: &mm::StructEnv) -> String {
         let raw_name = s_env.get_full_name_str();
-        format!("struct.{}", raw_name.replace(":", "_"))
+        format!("struct.{}", raw_name.replace(':', "_"))
     }
 
     #[allow(dead_code)]
     fn dump_all_structs(&self, all_structs: &Vec<mm::StructEnv>, is_post_translation: bool) {
         for s_env in all_structs {
-            let ll_name = self.ll_struct_name_from_raw_name(&s_env);
+            let ll_name = self.ll_struct_name_from_raw_name(s_env);
             let prepost = if is_post_translation {
                 "Translated"
             } else {
@@ -294,7 +292,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
                 }
             }
             eprintln!("with abilities: {:?}", s_env.get_abilities());
-            eprintln!("");
+            eprintln!();
         }
     }
 
