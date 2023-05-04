@@ -40,4 +40,3 @@ module 0x200::UseIt {
         Country::dropit(c2);
     }
 }
-

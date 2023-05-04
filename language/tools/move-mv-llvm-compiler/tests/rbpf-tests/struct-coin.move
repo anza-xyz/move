@@ -73,4 +73,3 @@ script {
         m::destroy_zero(mc1);
     }
 }
-

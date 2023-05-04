@@ -149,8 +149,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
 
     /// Generate LLVM IR struct declarations for all Move structures.
     fn declare_structs(&mut self) {
-        use move_binary_format::access::ModuleAccess;
-        use move_binary_format::views::StructHandleView;
+        use move_binary_format::{access::ModuleAccess, views::StructHandleView};
         let m_env = &self.env;
         let g_env = &m_env.env;
 
@@ -167,10 +166,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         while let Some(mid) = worklist.pop_front() {
             let module_data = &g_env.module_data[mid.to_usize()];
             for shandle in module_data.module.struct_handles().iter() {
-                let struct_view = StructHandleView::new(
-                    &module_data.module,
-                    shandle,
-                );
+                let struct_view = StructHandleView::new(&module_data.module, shandle);
                 let declaring_module_env = g_env
                     .find_module(&g_env.to_module_name(&struct_view.module_id()))
                     .expect("undefined module");
@@ -244,13 +240,16 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
                 todo!("generic structs not yet implemented");
             }
             let ll_name = self.ll_struct_name_from_raw_name(&s_env);
-            let ll_sty = self.llvm_cx.named_struct_type(&ll_name).expect("no struct type");
+            let ll_sty = self
+                .llvm_cx
+                .named_struct_type(&ll_name)
+                .expect("no struct type");
 
             // Visit each field in this struct, collecting field types.
             let mut ll_field_tys = Vec::with_capacity(s_env.get_field_count() + 1);
             for fld_env in s_env.get_fields() {
-              let ll_fld_type = self.llvm_type(&fld_env.get_type());
-              ll_field_tys.push(ll_fld_type);
+                let ll_fld_type = self.llvm_type(&fld_env.get_type());
+                ll_field_tys.push(ll_fld_type);
             }
 
             // Append the 'abilities' field.
@@ -270,11 +269,24 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
     fn dump_all_structs(&self, all_structs: &Vec<mm::StructEnv>, is_post_translation: bool) {
         for s_env in all_structs {
             let ll_name = self.ll_struct_name_from_raw_name(&s_env);
-            let prepost = if is_post_translation { "Translated" } else { "Translating" };
-            eprintln!("{} struct '{}' => '%{}'", prepost, s_env.get_full_name_str(), ll_name);
+            let prepost = if is_post_translation {
+                "Translated"
+            } else {
+                "Translating"
+            };
+            eprintln!(
+                "{} struct '{}' => '%{}'",
+                prepost,
+                s_env.get_full_name_str(),
+                ll_name
+            );
             for fld_env in s_env.get_fields() {
-                eprintln!("offset {}: '{}', type {:?}", fld_env.get_offset(),
-                    fld_env.get_name().display(s_env.symbol_pool()), fld_env.get_type());
+                eprintln!(
+                    "offset {}: '{}', type {:?}",
+                    fld_env.get_offset(),
+                    fld_env.get_name().display(s_env.symbol_pool()),
+                    fld_env.get_type()
+                );
                 if is_post_translation {
                     eprintln!("=>");
                     let ll_fld_type = self.llvm_type(&fld_env.get_type());
@@ -470,7 +482,9 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             llvm_builder: &self.llvm_builder,
             llvm_type: Box::new(|ty| self.llvm_type(ty)),
             get_bitwidth: Box::new(|ty| self.get_bitwidth(ty)),
-            ll_struct_name_from_raw_name: Box::new(|s_env| self.ll_struct_name_from_raw_name(s_env)),
+            ll_struct_name_from_raw_name: Box::new(|s_env| {
+                self.ll_struct_name_from_raw_name(s_env)
+            }),
             fn_decls: &self.fn_decls,
             label_blocks: BTreeMap::new(),
             locals,
@@ -660,14 +674,12 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     mty::Type::Struct(_, _, _) => {
                         self.llvm_builder.load_store(llty, src_llval, dst_llval);
                     }
-                    mty::Type::Reference(_, referent) => {
-                        match **referent {
-                            mty::Type::Struct(_, _, _) => {
-                                self.llvm_builder.load_store(llty, src_llval, dst_llval);
-                            }
-                            _ => todo!("{mty:?}"),
+                    mty::Type::Reference(_, referent) => match **referent {
+                        mty::Type::Struct(_, _, _) => {
+                            self.llvm_builder.load_store(llty, src_llval, dst_llval);
                         }
-                    }
+                        _ => todo!("{mty:?}"),
+                    },
                     _ => todo!("{mty:?}"),
                 }
             }
@@ -1086,8 +1098,12 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     .get_module(*mod_id)
                     .into_struct(*struct_id);
                 let struct_name = (self.ll_struct_name_from_raw_name)(&struct_env);
-                let stype = self.llvm_cx.named_struct_type(&struct_name).expect("no struct type");
-                self.llvm_builder.field_ref_store(src_llval, dst_llval, stype, *offset);
+                let stype = self
+                    .llvm_cx
+                    .named_struct_type(&struct_name)
+                    .expect("no struct type");
+                self.llvm_builder
+                    .field_ref_store(src_llval, dst_llval, stype, *offset);
             }
             Operation::Pack(mod_id, struct_id, _types) => {
                 // We don't yet translate generic structs, so _types is unused.
@@ -1098,14 +1114,18 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 assert_eq!(dst.len(), 1);
                 assert_eq!(src.len(), struct_env.get_field_count());
                 let struct_name = (self.ll_struct_name_from_raw_name)(&struct_env);
-                let stype = self.llvm_cx.named_struct_type(&struct_name).expect("no struct type");
+                let stype = self
+                    .llvm_cx
+                    .named_struct_type(&struct_name)
+                    .expect("no struct type");
                 let fvals = src
                     .iter()
                     .map(|i| (self.locals[*i].llty, self.locals[*i].llval))
                     .collect::<Vec<_>>();
                 let dst_idx = dst[0];
                 let ldst = (self.locals[dst_idx].llty, self.locals[dst_idx].llval);
-                self.llvm_builder.insert_fields_and_store(&fvals, ldst, stype);
+                self.llvm_builder
+                    .insert_fields_and_store(&fvals, ldst, stype);
             }
             Operation::Unpack(mod_id, struct_id, _types) => {
                 // We don't yet translate generic structs, so _types is unused.
@@ -1116,14 +1136,18 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 assert_eq!(src.len(), 1);
                 assert_eq!(dst.len(), struct_env.get_field_count());
                 let struct_name = (self.ll_struct_name_from_raw_name)(&struct_env);
-                let stype = self.llvm_cx.named_struct_type(&struct_name).expect("no struct type");
+                let stype = self
+                    .llvm_cx
+                    .named_struct_type(&struct_name)
+                    .expect("no struct type");
                 let fdstvals = dst
                     .iter()
                     .map(|i| (self.locals[*i].llty, self.locals[*i].llval))
                     .collect::<Vec<_>>();
                 let src_idx = src[0];
                 let lsrc = (self.locals[src_idx].llty, self.locals[src_idx].llval);
-                self.llvm_builder.load_and_extract_fields(lsrc, &fdstvals, stype);
+                self.llvm_builder
+                    .load_and_extract_fields(lsrc, &fdstvals, stype);
             }
             Operation::Destroy => {
                 assert!(dst.is_empty());
@@ -1133,7 +1157,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 match mty {
                     mty::Type::Primitive(_) => ( /* nop */ ),
                     mty::Type::Struct(_, _, _) => ( /* nop */ ),
-                    mty::Type::Reference(_, _) => { /* nop */ },
+                    mty::Type::Reference(_, _) => { /* nop */ }
                     _ => todo!("{mty:?}"),
                 }
             }

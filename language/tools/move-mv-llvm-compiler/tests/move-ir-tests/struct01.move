@@ -13,4 +13,3 @@ module 0x100::M {
         MyStruct { field1: 32, field2: true, field3: EmptyStruct {} }
     }
 }
-

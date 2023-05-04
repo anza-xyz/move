@@ -327,14 +327,19 @@ impl Builder {
                 struct_ty.0,
                 tmp_reg,
                 offset as libc::c_uint,
-                "fld_ref".cstr()
+                "fld_ref".cstr(),
             );
             LLVMBuildStore(self.0, field_ptr, dst.0);
         }
     }
 
     // Load the source fields, insert them into a new struct value, then store the struct value.
-    pub fn insert_fields_and_store(&self, src: &[(Type, Alloca)], dst: (Type, Alloca), stype: StructType) {
+    pub fn insert_fields_and_store(
+        &self,
+        src: &[(Type, Alloca)],
+        dst: (Type, Alloca),
+        stype: StructType,
+    ) {
         unsafe {
             let loads = src
                 .iter()
@@ -351,23 +356,31 @@ impl Builder {
                 agg_val = LLVMBuildInsertValue(self.0, agg_val, loads[i], i as libc::c_uint, s);
             }
 
-            assert_eq!(LLVMTypeOf(agg_val), dst.0.0);
-            LLVMBuildStore(self.0, agg_val, dst.1.0);
+            assert_eq!(LLVMTypeOf(agg_val), dst.0 .0);
+            LLVMBuildStore(self.0, agg_val, dst.1 .0);
         }
     }
 
     // Load the source struct, extract fields , then store each field in a local.
-    pub fn load_and_extract_fields(&self, src: (Type, Alloca), dst: &[(Type, Alloca)], stype: StructType) {
+    pub fn load_and_extract_fields(
+        &self,
+        src: (Type, Alloca),
+        dst: &[(Type, Alloca)],
+        stype: StructType,
+    ) {
         unsafe {
             //let tmp_reg = LLVMBuildLoad2(self.0, src.0.ptr_type().0, src.1.0, "tmp".cstr());
             //let srcval = LLVMBuildLoad2(self.0, stype.0, tmp_reg, "srcval".cstr());
-            assert_eq!(src.0.0, stype.0);
-            let srcval = LLVMBuildLoad2(self.0, stype.0, src.1.0, "srcval".cstr());
+            assert_eq!(src.0 .0, stype.0);
+            let srcval = LLVMBuildLoad2(self.0, stype.0, src.1 .0, "srcval".cstr());
 
             // The LLVM struct currently has one additional compiler-generated field. We won't
             // extract that for an unpack.
             let user_field_count = dst.len();
-            assert_eq!(user_field_count + 1, LLVMCountStructElementTypes(stype.0) as usize);
+            assert_eq!(
+                user_field_count + 1,
+                LLVMCountStructElementTypes(stype.0) as usize
+            );
 
             let mut extracts = Vec::with_capacity(user_field_count);
             for i in 0..user_field_count {
@@ -377,8 +390,11 @@ impl Builder {
             }
 
             for i in 0..user_field_count {
-                assert_eq!(dst[i].0.0, LLVMStructGetTypeAtIndex(stype.0, i as libc::c_uint));
-                LLVMBuildStore(self.0, extracts[i], dst[i].1.0);
+                assert_eq!(
+                    dst[i].0 .0,
+                    LLVMStructGetTypeAtIndex(stype.0, i as libc::c_uint)
+                );
+                LLVMBuildStore(self.0, extracts[i], dst[i].1 .0);
             }
         }
     }
