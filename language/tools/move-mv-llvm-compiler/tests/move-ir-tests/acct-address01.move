@@ -1,0 +1,24 @@
+
+module 0x100::M3 {
+    public fun use_address_val(a: address): address  {
+        let a2 = move a;
+        a2
+    }
+
+    public fun use_address_ref(a: &address): address  {
+        let a2 = *a;
+        a2
+    }
+
+    public fun ret_address_ref(a: &address): &address  {
+        a
+    }
+
+    public fun eq_address(a: address, b: address): bool {
+        a == b
+    }
+
+    public fun ne_address(a: address, b: address): bool {
+        a != b
+    }
+}

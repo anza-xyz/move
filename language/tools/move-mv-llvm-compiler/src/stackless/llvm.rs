@@ -16,6 +16,8 @@
 use llvm_extra_sys::*;
 use llvm_sys::{core::*, prelude::*, target::*, target_machine::*, LLVMOpcode};
 use move_core_types::u256;
+use num_traits::{PrimInt, ToPrimitive};
+use std::any::TypeId;
 
 use crate::cstr::SafeCStr;
 
@@ -25,7 +27,7 @@ use std::{
 };
 
 pub use llvm_extra_sys::AttributeKind;
-pub use llvm_sys::LLVMIntPredicate;
+pub use llvm_sys::{LLVMIntPredicate, LLVMLinkage::LLVMInternalLinkage};
 
 pub fn initialize_sbf() {
     unsafe {
@@ -101,6 +103,33 @@ impl Context {
     pub fn int256_type(&self) -> Type {
         unsafe { Type(LLVMIntTypeInContext(self.0, 256)) }
     }
+    pub fn int_arbitrary_type(&self, len: usize) -> Type {
+        unsafe { Type(LLVMIntTypeInContext(self.0, len as libc::c_uint)) }
+    }
+
+    pub fn array_type(&self, ll_elt_ty: Type, len: usize) -> Type {
+        unsafe { Type(LLVMArrayType(ll_elt_ty.0, len as libc::c_uint)) }
+    }
+
+    pub fn vector_type(&self, ll_elt_ty: Type, len: usize) -> Type {
+        unsafe { Type(LLVMVectorType(ll_elt_ty.0, len as libc::c_uint)) }
+    }
+
+    pub fn llvm_type_from_rust_type<T: 'static>(&self) -> Type {
+        if TypeId::of::<T>() == TypeId::of::<u8>() {
+            self.int8_type()
+        } else if TypeId::of::<T>() == TypeId::of::<u16>() {
+            self.int16_type()
+        } else if TypeId::of::<T>() == TypeId::of::<u32>() {
+            self.int32_type()
+        } else if TypeId::of::<T>() == TypeId::of::<u64>() {
+            self.int64_type()
+        } else if TypeId::of::<T>() == TypeId::of::<u128>() {
+            self.int128_type()
+        } else {
+            todo!("{}", std::any::type_name::<T>());
+        }
+    }
 
     pub fn named_struct_type(&self, name: &str) -> Option<StructType> {
         unsafe {
@@ -137,6 +166,17 @@ impl Context {
                 v.len() as u32,
                 true as i32, /* !null_terminated */
             ))
+        }
+    }
+
+    pub fn const_int_array<T: PrimInt + ToPrimitive + 'static>(&self, v: &[T]) -> ArrayValue {
+        let llty = self.llvm_type_from_rust_type::<T>();
+        unsafe {
+            let mut vals: Vec<_> = v
+                .iter()
+                .map(|x| Constant::int128(llty, (*x).to_u128().unwrap()).0)
+                .collect();
+            ArrayValue(LLVMConstArray(llty.0, vals.as_mut_ptr(), vals.len() as u32))
         }
     }
 
@@ -263,6 +303,13 @@ impl Module {
 
     pub fn add_global(&self, ty: Type, name: &str) -> Global {
         assert!(self.get_global(name).is_none());
+        unsafe {
+            let v = LLVMAddGlobal(self.0, ty.0, name.cstr());
+            Global(v)
+        }
+    }
+
+    pub fn add_global2(&self, ty: Type, name: &str) -> Global {
         unsafe {
             let v = LLVMAddGlobal(self.0, ty.0, name.cstr());
             Global(v)
@@ -623,8 +670,20 @@ impl Builder {
             LLVMBuildUnreachable(self.0);
         }
     }
+
     pub fn build_load(&self, ty: Type, src0_reg: Alloca, name: &str) -> LLVMValueRef {
         unsafe { LLVMBuildLoad2(self.0, ty.0, src0_reg.0, name.cstr()) }
+    }
+
+    pub fn build_load2(&self, ty: Type, src0_reg: LLVMValueRef, name: &str) -> LLVMValueRef {
+        unsafe { LLVMBuildLoad2(self.0, ty.0, src0_reg, name.cstr()) }
+    }
+
+    pub fn build_load_global_const(&self, gval: Global) -> Constant {
+        unsafe {
+            let ty = LLVMGlobalGetValueType(gval.0);
+            Constant(LLVMBuildLoad2(self.0, ty, gval.0, "".cstr()))
+        }
     }
 
     pub fn build_store(&self, dst_reg: LLVMValueRef, dst: Alloca) {
@@ -693,6 +752,14 @@ impl Type {
 
     pub fn get_context(&self) -> Context {
         unsafe { Context(LLVMGetTypeContext(self.0)) }
+    }
+
+    pub fn get_array_length(&self) -> usize {
+        unsafe { LLVMGetArrayLength(self.0) as usize }
+    }
+
+    pub fn get_element_type(&self) -> Type {
+        unsafe { Type(LLVMGetElementType(self.0)) }
     }
 
     pub fn dump(&self) {
@@ -822,6 +889,9 @@ impl Alloca {
     pub fn llvm_type(&self) -> Type {
         unsafe { Type(LLVMTypeOf(self.0)) }
     }
+    pub fn get0(&self) -> LLVMValueRef {
+        self.0
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -846,6 +916,12 @@ impl Global {
     pub fn set_initializer(&self, v: Constant) {
         unsafe {
             LLVMSetInitializer(self.0, v.0);
+        }
+    }
+
+    pub fn set_internal_linkage(&self) {
+        unsafe {
+            LLVMSetLinkage(self.0, LLVMInternalLinkage);
         }
     }
 
@@ -893,6 +969,11 @@ impl Constant {
             }
         }
     }
+
+    pub fn get_const_null(ty: Type) -> Constant {
+        unsafe { Constant(LLVMConstNull(ty.0)) }
+    }
+
     pub fn get0(&self) -> LLVMValueRef {
         self.0
     }

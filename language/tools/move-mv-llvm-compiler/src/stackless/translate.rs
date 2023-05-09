@@ -32,7 +32,7 @@
 
 use crate::stackless::{extensions::*, llvm, rttydesc};
 use llvm_sys::prelude::LLVMValueRef;
-use move_core_types::{u256, vm_status::StatusCode::ARITHMETIC_ERROR};
+use move_core_types::{account_address, u256, vm_status::StatusCode::ARITHMETIC_ERROR};
 use move_model::{ast as mast, model as mm, ty as mty};
 use move_stackless_bytecode::{
     stackless_bytecode as sbc, stackless_bytecode_generator::StacklessBytecodeGenerator,
@@ -106,12 +106,7 @@ impl<'up> GlobalContext<'up> {
         // test for feature "solana" here. Needless to say, the compiler-build of move-native has
         // been getting non-Solana target_defs all along.
         #[cfg(feature = "solana")]
-        assert!(
-            move_core_types::account_address::AccountAddress::ZERO
-                .to_vec()
-                .len()
-                == 32
-        );
+        assert!(account_address::AccountAddress::ZERO.len() == 32);
 
         target.initialize_llvm();
 
@@ -129,6 +124,7 @@ impl<'up> GlobalContext<'up> {
     ) -> ModuleContext<'up, 'this> {
         let env = self.env.get_module(id);
         let name = env.llvm_module_name();
+
         ModuleContext {
             env,
             llvm_cx: &self.llvm_cx,
@@ -449,6 +445,10 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             Type::Primitive(PrimitiveType::U64) => self.llvm_cx.int64_type(),
             Type::Primitive(PrimitiveType::U128) => self.llvm_cx.int128_type(),
             Type::Primitive(PrimitiveType::U256) => self.llvm_cx.int256_type(),
+            Type::Primitive(PrimitiveType::Address) => self.llvm_cx.array_type(
+                self.llvm_cx.int8_type(),
+                account_address::AccountAddress::LENGTH,
+            ),
             Type::Reference(_, referent_mty) => {
                 let referent_llty = self.llvm_type(referent_mty);
                 referent_llty.ptr_type()
@@ -674,6 +674,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                         // src local slot should not be accessed again.
                         self.locals[*dst] = self.locals[*src].clone();
                     }
+                    mty::Type::Primitive(mty::PrimitiveType::Address) => {
+                        self.locals[*dst] = self.locals[*src].clone();
+                    }
                     _ => todo!("{mty:?}"),
                 }
             }
@@ -690,11 +693,14 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                         | mty::PrimitiveType::U32
                         | mty::PrimitiveType::U64
                         | mty::PrimitiveType::U128
-                        | mty::PrimitiveType::U256,
+                        | mty::PrimitiveType::U256, //| mty::PrimitiveType::Address,
                     ) => {
                         self.llvm_builder.load_store(llty, src_llval, dst_llval);
                     }
                     mty::Type::Struct(_, _, _) => {
+                        self.llvm_builder.load_store(llty, src_llval, dst_llval);
+                    }
+                    mty::Type::Primitive(mty::PrimitiveType::Address) => {
                         self.llvm_builder.load_store(llty, src_llval, dst_llval);
                     }
                     mty::Type::Reference(_, referent) => match **referent {
@@ -719,7 +725,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                         | mty::PrimitiveType::U32
                         | mty::PrimitiveType::U64
                         | mty::PrimitiveType::U128
-                        | mty::PrimitiveType::U256,
+                        | mty::PrimitiveType::U256
+                        | mty::PrimitiveType::Address,
                     ) => {
                         self.llvm_builder.load_store(llty, src_llval, dst_llval);
                     }
@@ -961,6 +968,49 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         self.emit_prepost_new_blocks_with_abort(cond_reg);
     }
 
+    fn translate_address_comparison_impl(
+        &self,
+        dst: &[mast::TempIndex],
+        src: &[mast::TempIndex],
+        name: &str,
+        pred: llvm::LLVMIntPredicate,
+    ) {
+        assert_eq!(dst.len(), 1);
+        assert_eq!(src.len(), 2);
+
+        let local0 = &self.locals[src[0]];
+        let local1 = &self.locals[src[1]];
+        assert!(local0.mty.is_address());
+
+        let src0_llty = local0.llty;
+        let num_elts = src0_llty.get_array_length();
+        let vec_src_ty = self
+            .llvm_cx
+            .vector_type(src0_llty.get_element_type(), num_elts);
+
+        let op0_reg =
+            self.llvm_builder
+                .build_load(vec_src_ty, local0.llval, &format!("{name}_op0"));
+        let op1_reg =
+            self.llvm_builder
+                .build_load(vec_src_ty, local1.llval, &format!("{name}_op1"));
+        let cmp_vecs_reg = self
+            .llvm_builder
+            .build_compare(pred, op0_reg, op1_reg, "addrcmp_dst");
+
+        let cmp_int_ty = self.llvm_cx.int_arbitrary_type(num_elts);
+        let bc_val = self
+            .llvm_builder
+            .build_unary_bitcast(cmp_vecs_reg, cmp_int_ty.0, "v2i");
+
+        let inv_pred = llvm::LLVMIntPredicate::LLVMIntNE;
+        let zero_val = llvm::Constant::get_const_null(cmp_int_ty).get0();
+        let dst_reg =
+            self.llvm_builder
+                .build_compare(inv_pred, bc_val, zero_val, &format!("{name}_dst"));
+        self.store_reg(dst[0], dst_reg);
+    }
+
     fn translate_comparison_impl(
         &self,
         dst: &[mast::TempIndex],
@@ -970,6 +1020,15 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
     ) {
         assert_eq!(dst.len(), 1);
         assert_eq!(src.len(), 2);
+
+        let src_mty = &self.locals[src[0]].mty;
+        if src_mty.is_address() {
+            self.translate_address_comparison_impl(dst, src, name, pred);
+            return;
+        }
+
+        assert!(src_mty.is_number());
+
         let src0_reg = self.load_reg(src[0], &format!("{name}_src_0"));
         let src1_reg = self.load_reg(src[1], &format!("{name}_src_1"));
         let dst_reg =
@@ -1526,6 +1585,23 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 let newval =
                     u256::U256::from_str_radix(&as_str, 10).expect("cannot convert to U256");
                 llvm::Constant::int256(llty, newval)
+            }
+            Constant::Address(val) => {
+                let addr_len = account_address::AccountAddress::LENGTH;
+
+                // Create a global constant value of type [LENGTH x i8] with this account address
+                // as the contents (in LSB first order).
+                //
+                // The address is a BigUint which only stores as many bits as needed, so pad it out
+                // to the full address length if needed.
+                let mut bytes = val.to_bytes_le();
+                bytes.extend(vec![0; addr_len - bytes.len()]);
+                let aval = self.llvm_cx.const_int_array::<u8>(&bytes).as_const();
+                let gval = self.llvm_module.add_global2(aval.llvm_type(), "acct.addr");
+                gval.set_constant();
+                gval.set_internal_linkage();
+                gval.set_initializer(aval);
+                self.llvm_builder.build_load_global_const(gval)
             }
             _ => todo!(),
         }
