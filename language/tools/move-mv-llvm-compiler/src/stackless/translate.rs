@@ -693,7 +693,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                         | mty::PrimitiveType::U32
                         | mty::PrimitiveType::U64
                         | mty::PrimitiveType::U128
-                        | mty::PrimitiveType::U256, //| mty::PrimitiveType::Address,
+                        | mty::PrimitiveType::U256,
                     ) => {
                         self.llvm_builder.load_store(llty, src_llval, dst_llval);
                     }
@@ -988,26 +988,17 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
             .llvm_cx
             .vector_type(src0_llty.get_element_type(), num_elts);
 
-        let op0_reg =
-            self.llvm_builder
-                .build_load(vec_src_ty, local0.llval, &format!("{name}_op0"));
-        let op1_reg =
-            self.llvm_builder
-                .build_load(vec_src_ty, local1.llval, &format!("{name}_op1"));
-        let cmp_vecs_reg = self
-            .llvm_builder
-            .build_compare(pred, op0_reg, op1_reg, "addrcmp_dst");
+        let builder = self.llvm_builder;
+        let op0_reg = builder.build_load(vec_src_ty, local0.llval, &format!("{name}_op0"));
+        let op1_reg = builder.build_load(vec_src_ty, local1.llval, &format!("{name}_op1"));
+        let cmp_vecs_reg = builder.build_compare(pred, op0_reg, op1_reg, "addrcmp_dst");
 
         let cmp_int_ty = self.llvm_cx.int_arbitrary_type(num_elts);
-        let bc_val = self
-            .llvm_builder
-            .build_unary_bitcast(cmp_vecs_reg, cmp_int_ty.0, "v2i");
+        let bc_val = builder.build_unary_bitcast(cmp_vecs_reg, cmp_int_ty.0, "v2i");
 
         let inv_pred = llvm::LLVMIntPredicate::LLVMIntNE;
         let zero_val = llvm::Constant::get_const_null(cmp_int_ty).get0();
-        let dst_reg =
-            self.llvm_builder
-                .build_compare(inv_pred, bc_val, zero_val, &format!("{name}_dst"));
+        let dst_reg = builder.build_compare(inv_pred, bc_val, zero_val, &format!("{name}_dst"));
         self.store_reg(dst[0], dst_reg);
     }
 
