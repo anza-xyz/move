@@ -17,7 +17,6 @@ use llvm_extra_sys::*;
 use llvm_sys::{core::*, prelude::*, target::*, target_machine::*, LLVMOpcode};
 use move_core_types::u256;
 use num_traits::{PrimInt, ToPrimitive};
-use std::any::TypeId;
 
 use crate::cstr::SafeCStr;
 
@@ -116,18 +115,13 @@ impl Context {
     }
 
     pub fn llvm_type_from_rust_type<T: 'static>(&self) -> Type {
-        if TypeId::of::<T>() == TypeId::of::<u8>() {
-            self.int8_type()
-        } else if TypeId::of::<T>() == TypeId::of::<u16>() {
-            self.int16_type()
-        } else if TypeId::of::<T>() == TypeId::of::<u32>() {
-            self.int32_type()
-        } else if TypeId::of::<T>() == TypeId::of::<u64>() {
-            self.int64_type()
-        } else if TypeId::of::<T>() == TypeId::of::<u128>() {
-            self.int128_type()
-        } else {
-            todo!("{}", std::any::type_name::<T>());
+        match std::any::type_name::<T>() {
+            "u8" => self.int8_type(),
+            "u16" => self.int16_type(),
+            "u32" => self.int32_type(),
+            "u64" => self.int64_type(),
+            "u128" => self.int128_type(),
+            _ => todo!("{}", std::any::type_name::<T>()),
         }
     }
 
@@ -266,6 +260,21 @@ impl Module {
             } else {
                 None
             }
+        }
+    }
+
+    pub fn declare_known_functions(&self) {
+        // Declare i32 @memcmp(ptr, ptr, i64).
+        unsafe {
+            let cx = LLVMGetModuleContext(self.0);
+            let memcmp_arg_tys: Vec<Type> = vec![
+                Type(LLVMPointerTypeInContext(cx, 0 as libc::c_uint)),
+                Type(LLVMPointerTypeInContext(cx, 0 as libc::c_uint)),
+                Type(LLVMInt64TypeInContext(cx)),
+            ];
+            let memcmp_rty = Type(LLVMInt32TypeInContext(cx));
+            let memcmp_fty = FunctionType::new(memcmp_rty, &memcmp_arg_tys);
+            self.add_function("memcmp", memcmp_fty);
         }
     }
 
@@ -581,19 +590,19 @@ impl Builder {
         }
     }
 
-    pub fn call(&self, fnval: Function, args: &[AnyValue]) {
+    pub fn call(&self, fnval: Function, args: &[AnyValue]) -> AnyValue {
         let fnty = fnval.llvm_type();
 
         unsafe {
             let mut args = args.iter().map(|val| val.0).collect::<Vec<_>>();
-            LLVMBuildCall2(
+            AnyValue(LLVMBuildCall2(
                 self.0,
                 fnty.0,
                 fnval.0,
                 args.as_mut_ptr(),
                 args.len() as libc::c_uint,
                 "".cstr(),
-            );
+            ))
         }
     }
 
@@ -893,7 +902,11 @@ impl Alloca {
 #[derive(Copy, Clone)]
 pub struct AnyValue(LLVMValueRef);
 
-impl AnyValue {}
+impl AnyValue {
+    pub fn get0(&self) -> LLVMValueRef {
+        self.0
+    }
+}
 
 #[derive(Copy, Clone)]
 pub struct Global(LLVMValueRef);
@@ -901,6 +914,10 @@ pub struct Global(LLVMValueRef);
 impl Global {
     pub fn ptr(&self) -> Constant {
         Constant(self.0)
+    }
+
+    pub fn as_any_value(&self) -> AnyValue {
+        AnyValue(self.0)
     }
 
     pub fn set_constant(&self) {

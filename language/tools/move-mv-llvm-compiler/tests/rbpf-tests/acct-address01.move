@@ -27,13 +27,14 @@ script {
     use 0x100::M3;
 
     fun main() {
-        let a = @0x2;
-        let b = @0x2;
+        let a = @0x2A3B;
+        let b = @0x2A3B;
         assert!(M3::eq_address(a, b), 0xf00);
 
-        let a = @0x5;
-        let b = @0x6;
+        let a = @0x55AA1122334455;
+        let b = @0x55AA1122334456;
         assert!(M3::ne_address(a, b), 0xf01);
+        assert!(!M3::eq_address(a, b), 0xf01);
 
         let a = @0x42;
         let t1 = M3::use_address_val(a);

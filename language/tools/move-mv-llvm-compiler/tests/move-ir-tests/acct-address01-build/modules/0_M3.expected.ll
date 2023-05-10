@@ -3,6 +3,8 @@ source_filename = "<unknown>"
 
 @acct.addr = internal constant [32 x i8] c"\1F\1E\1D\1C\1B\1A\19\18\17\16\15\14\13\12\11\10\0F\0E\0D\0C\0B\0A\09\08\07\06\05\04\03\02\01\00"
 
+declare i32 @memcmp(ptr, ptr, i64)
+
 define i1 @M3__eq_address([32 x i8] %0, [32 x i8] %1) {
 entry:
   %local_0 = alloca [32 x i8], align 1
@@ -12,11 +14,8 @@ entry:
   %local_4 = alloca i1, align 1
   store [32 x i8] %0, ptr %local_0, align 1
   store [32 x i8] %1, ptr %local_1, align 1
-  %eq_op0 = load <32 x i8>, ptr %local_0, align 32
-  %eq_op1 = load <32 x i8>, ptr %local_1, align 32
-  %addrcmp_dst = icmp eq <32 x i8> %eq_op0, %eq_op1
-  %v2i = bitcast <32 x i1> %addrcmp_dst to i32
-  %eq_dst = icmp ne i32 %v2i, 0
+  %2 = call i32 @memcmp(ptr %local_0, ptr %local_1, i64 32)
+  %eq_dst = icmp eq i32 %2, 0
   store i1 %eq_dst, ptr %local_4, align 1
   %retval = load i1, ptr %local_4, align 1
   ret i1 %retval
@@ -40,11 +39,8 @@ entry:
   %local_4 = alloca i1, align 1
   store [32 x i8] %0, ptr %local_0, align 1
   store [32 x i8] %1, ptr %local_1, align 1
-  %ne_op0 = load <32 x i8>, ptr %local_0, align 32
-  %ne_op1 = load <32 x i8>, ptr %local_1, align 32
-  %addrcmp_dst = icmp ne <32 x i8> %ne_op0, %ne_op1
-  %v2i = bitcast <32 x i1> %addrcmp_dst to i32
-  %ne_dst = icmp ne i32 %v2i, 0
+  %2 = call i32 @memcmp(ptr %local_0, ptr %local_1, i64 32)
+  %ne_dst = icmp ne i32 %2, 0
   store i1 %ne_dst, ptr %local_4, align 1
   %retval = load i1, ptr %local_4, align 1
   ret i1 %retval

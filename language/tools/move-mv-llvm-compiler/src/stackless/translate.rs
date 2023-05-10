@@ -157,6 +157,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         self.llvm_module.set_source_file_name(filename);
 
         self.declare_structs();
+        self.llvm_module.declare_known_functions();
         self.declare_functions();
 
         for fn_env in self.env.get_functions() {
@@ -975,6 +976,17 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         name: &str,
         pred: llvm::LLVMIntPredicate,
     ) {
+        // Generate the following LLVM IR to compare `address` types.
+        // Note that only eq/ne apply to these.
+        //
+        // The incoming sources are allocas or global values of array type [N x i8],
+        // where N = account_address::AccountAddress::LENGTH (typically 16, 20, or 32 bytes,
+        // according to target platform/chain). Use memcmp to do the comparison.
+        //    ...
+        //    %t = call i32 @memcmp(ptr %local_0, ptr %local_1, i64 N)
+        //    %{eq,ne}_dst = icmp {eq,ne} %t, 0
+        //    ...
+
         assert_eq!(dst.len(), 1);
         assert_eq!(src.len(), 2);
 
@@ -982,23 +994,23 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         let local1 = &self.locals[src[1]];
         assert!(local0.mty.is_address());
 
-        let src0_llty = local0.llty;
-        let num_elts = src0_llty.get_array_length();
-        let vec_src_ty = self
-            .llvm_cx
-            .vector_type(src0_llty.get_element_type(), num_elts);
-
+        let num_elts = local0.llty.get_array_length() as u64;
         let builder = self.llvm_builder;
-        let op0_reg = builder.build_load(vec_src_ty, local0.llval, &format!("{name}_op0"));
-        let op1_reg = builder.build_load(vec_src_ty, local1.llval, &format!("{name}_op1"));
-        let cmp_vecs_reg = builder.build_compare(pred, op0_reg, op1_reg, "addrcmp_dst");
+        let llcx = self.llvm_cx;
+        let memcmp = self
+            .llvm_module
+            .get_named_function("memcmp")
+            .expect("memcmp not found");
 
-        let cmp_int_ty = self.llvm_cx.int_arbitrary_type(num_elts);
-        let bc_val = builder.build_unary_bitcast(cmp_vecs_reg, cmp_int_ty.0, "v2i");
+        let args = vec![
+            local0.llval.as_any_value(),
+            local1.llval.as_any_value(),
+            llvm::Constant::int(llcx.int64_type(), num_elts).as_any_value(),
+        ];
+        let cmp_val = builder.call(memcmp, &args);
 
-        let inv_pred = llvm::LLVMIntPredicate::LLVMIntNE;
-        let zero_val = llvm::Constant::get_const_null(cmp_int_ty).get0();
-        let dst_reg = builder.build_compare(inv_pred, bc_val, zero_val, &format!("{name}_dst"));
+        let zero_val = llvm::Constant::get_const_null(llcx.int32_type()).get0();
+        let dst_reg = builder.build_compare(pred, cmp_val.get0(), zero_val, &format!("{name}_dst"));
         self.store_reg(dst[0], dst_reg);
     }
 
