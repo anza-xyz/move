@@ -522,7 +522,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         let locals = Vec::with_capacity(fn_env.get_local_count());
         FunctionContext {
             env: fn_env,
-            parent_cx: parent_cx,
+            parent_cx,
             label_blocks: BTreeMap::new(),
             locals,
         }
@@ -645,7 +645,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     let c = self.constant(&sbc::Constant::Address(addr_val.unwrap()));
                     self.parent_cx.llvm_builder.build_store(c.get0(), local.llval);
                 } else {
-                    self.parent_cx.llvm_builder
+                    self.parent_cx
+                        .llvm_builder
                         .store_param_to_alloca(ll_param, local.llval);
                 }
             }
@@ -798,8 +799,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 let cnd_llty = self.locals[*cnd_idx].llty;
                 let bb0 = self.label_blocks[label0];
                 let bb1 = self.label_blocks[label1];
-                builder
-                    .load_cond_br(cnd_llty, cnd_llval, bb0, bb1);
+                builder.load_cond_br(cnd_llty, cnd_llval, bb0, bb1);
             }
             sbc::Bytecode::Jump(_, label) => {
                 let llbb = self.label_blocks[label];
@@ -892,7 +892,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
     fn load_reg(&self, src_idx: mast::TempIndex, name: &str) -> LLVMValueRef {
         let src_llval = self.locals[src_idx].llval;
         let src_ty = self.locals[src_idx].llty;
-        self.parent_cx.llvm_builder.build_load(src_ty, src_llval, name)
+        self.parent_cx
+            .llvm_builder
+            .build_load(src_ty, src_llval, name)
     }
 
     fn store_reg(&self, dst_idx: mast::TempIndex, dst_reg: LLVMValueRef) {
@@ -1032,7 +1034,10 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         //
 
         let dst = args[2].unwrap();
-        let cond_reg = self.parent_cx.llvm_builder.build_extract_value(dst.1, 1, "mul_ovf");
+        let cond_reg = self
+            .parent_cx
+            .llvm_builder
+            .build_extract_value(dst.1, 1, "mul_ovf");
         self.emit_prepost_new_blocks_with_abort(cond_reg);
     }
 
@@ -1094,7 +1099,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         let builder = &self.parent_cx.llvm_builder;
         let llcx = &self.parent_cx.llvm_cx;
         let memcmp = self
-            .parent_cx.llvm_module
+            .parent_cx
+            .llvm_module
             .get_named_function("memcmp")
             .expect("memcmp not found");
 
@@ -1130,9 +1136,12 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
 
         let src0_reg = self.load_reg(src[0], &format!("{name}_src_0"));
         let src1_reg = self.load_reg(src[1], &format!("{name}_src_1"));
-        let dst_reg =
-            self.parent_cx.llvm_builder
-                .build_compare(pred, src0_reg, src1_reg, &format!("{name}_dst"));
+        let dst_reg = self.parent_cx.llvm_builder.build_compare(
+            pred,
+            src0_reg,
+            src1_reg,
+            &format!("{name}_dst"),
+        );
         self.store_reg(dst[0], dst_reg);
     }
 
@@ -1164,15 +1173,18 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
             assert_eq!(self.get_bitwidth(src1_mty), 8);
             let src0_width = self.get_bitwidth(src0_mty);
             if src0_width > 8 {
-                src1_reg =
-                    self.parent_cx.llvm_builder
-                        .build_zext(src1_reg, self.llvm_type(src0_mty).0, "zext_dst");
+                src1_reg = self.parent_cx.llvm_builder.build_zext(
+                    src1_reg,
+                    self.llvm_type(src0_mty).0,
+                    "zext_dst",
+                );
             }
         }
 
-        let dst_reg = self
-            .parent_cx.llvm_builder
-            .build_binop(op, src0_reg, src1_reg, &format!("{name}_dst"));
+        let dst_reg =
+            self.parent_cx
+                .llvm_builder
+                .build_binop(op, src0_reg, src1_reg, &format!("{name}_dst"));
 
         // Emit any dynamic post-condition checking code.
         if dyncheck_emitter_fn.1 == EmitterFnKind::PostCheck {
@@ -1236,11 +1248,13 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
 
         let dst_reg = if src_width < dst_width {
             // Widen
-            self.parent_cx.llvm_builder
+            self.parent_cx
+                .llvm_builder
                 .build_zext(src_reg, self.llvm_type(dst_mty).0, "zext_dst")
         } else {
             // Truncate
-            self.parent_cx.llvm_builder
+            self.parent_cx
+                .llvm_builder
                 .build_trunc(src_reg, self.llvm_type(dst_mty).0, "trunc_dst")
         };
         self.store_reg(dst[0], dst_reg);
@@ -1280,11 +1294,11 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     .into_struct(*struct_id);
                 let struct_name = self.parent_cx.ll_struct_name_from_raw_name(&struct_env);
                 let stype = self
-                    .parent_cx.llvm_cx
+                    .parent_cx
+                    .llvm_cx
                     .named_struct_type(&struct_name)
                     .expect("no struct type");
-                builder
-                    .field_ref_store(src_llval, dst_llval, stype, *offset);
+                builder.field_ref_store(src_llval, dst_llval, stype, *offset);
             }
             Operation::Pack(mod_id, struct_id, _types) => {
                 // We don't yet translate generic structs, so _types is unused.
@@ -1296,7 +1310,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 assert_eq!(src.len(), struct_env.get_field_count());
                 let struct_name = self.parent_cx.ll_struct_name_from_raw_name(&struct_env);
                 let stype = self
-                    .parent_cx.llvm_cx
+                    .parent_cx
+                    .llvm_cx
                     .named_struct_type(&struct_name)
                     .expect("no struct type");
                 let fvals = src
@@ -1305,8 +1320,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     .collect::<Vec<_>>();
                 let dst_idx = dst[0];
                 let ldst = (self.locals[dst_idx].llty, self.locals[dst_idx].llval);
-                builder
-                    .insert_fields_and_store(&fvals, ldst, stype);
+                builder.insert_fields_and_store(&fvals, ldst, stype);
             }
             Operation::Unpack(mod_id, struct_id, _types) => {
                 // We don't yet translate generic structs, so _types is unused.
@@ -1318,7 +1332,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 assert_eq!(dst.len(), struct_env.get_field_count());
                 let struct_name = self.parent_cx.ll_struct_name_from_raw_name(&struct_env);
                 let stype = self
-                    .parent_cx.llvm_cx
+                    .parent_cx
+                    .llvm_cx
                     .named_struct_type(&struct_name)
                     .expect("no struct type");
                 let fdstvals = dst
@@ -1327,8 +1342,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     .collect::<Vec<_>>();
                 let src_idx = src[0];
                 let lsrc = (self.locals[src_idx].llty, self.locals[src_idx].llval);
-                builder
-                    .load_and_extract_fields(lsrc, &fdstvals, stype);
+                builder.load_and_extract_fields(lsrc, &fdstvals, stype);
             }
             Operation::Destroy => {
                 assert!(dst.is_empty());
@@ -1350,8 +1364,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 let dst_llty = self.locals[dst_idx].llty;
                 let src_llval = self.locals[src_idx].llval;
                 let dst_llval = self.locals[dst_idx].llval;
-                builder
-                    .load_deref_store(dst_llty, src_llval, dst_llval);
+                builder.load_deref_store(dst_llty, src_llval, dst_llval);
             }
             Operation::WriteRef => {
                 // nb: both operands are from the "src" vector.
@@ -1365,8 +1378,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 let src_llty = self.locals[src_idx].llty;
                 let src_llval = self.locals[src_idx].llval;
                 let dst_llval = self.locals[dst_idx].llval;
-                builder
-                    .load_store_ref(src_llty, src_llval, dst_llval);
+                builder.load_store_ref(src_llty, src_llval, dst_llval);
             }
             Operation::FreezeRef => {
                 assert_eq!(dst.len(), 1);
@@ -1614,7 +1626,11 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
     fn get_rttydesc_ptrs(&self, types: &[mty::Type]) -> Vec<llvm::Constant> {
         let mut ll_global_ptrs = vec![];
         for type_ in types {
-            let ll_tydesc = rttydesc::define_llvm_tydesc(self.parent_cx.llvm_cx, &self.parent_cx.llvm_module, type_);
+            let ll_tydesc = rttydesc::define_llvm_tydesc(
+                self.parent_cx.llvm_cx,
+                &self.parent_cx.llvm_module,
+                type_,
+            );
             ll_global_ptrs.push(ll_tydesc.ptr());
         }
         ll_global_ptrs
@@ -1653,7 +1669,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
             .map(|l| (l.llty, l.llval))
             .collect::<Vec<_>>();
 
-        self.parent_cx.llvm_builder.load_call_store(ll_fn, &src, &dst);
+        self.parent_cx
+            .llvm_builder
+            .load_call_store(ll_fn, &src, &dst);
     }
 
     fn constant(&self, mc: &sbc::Constant) -> llvm::Constant {
@@ -1683,7 +1701,10 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 let mut bytes = val.to_bytes_le();
                 bytes.extend(vec![0; addr_len - bytes.len()]);
                 let aval = llcx.const_int_array::<u8>(&bytes).as_const();
-                let gval = self.parent_cx.llvm_module.add_global2(aval.llvm_type(), "acct.addr");
+                let gval = self
+                    .parent_cx
+                    .llvm_module
+                    .add_global2(aval.llvm_type(), "acct.addr");
                 gval.set_constant();
                 gval.set_internal_linkage();
                 gval.set_initializer(aval);
@@ -1699,8 +1720,11 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 let llfn = self.get_runtime_function(&rtcall);
                 let local_llval = self.locals[*local_idx].llval;
                 let local_llty = self.locals[*local_idx].llty;
-                self.parent_cx.llvm_builder
-                    .load_call_store(llfn, &[(local_llty, local_llval)], &[]);
+                self.parent_cx.llvm_builder.load_call_store(
+                    llfn,
+                    &[(local_llty, local_llval)],
+                    &[],
+                );
                 self.parent_cx.llvm_builder.build_unreachable();
             }
         }
@@ -1730,7 +1754,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 n => panic!("unknown runtime function {n}"),
             };
 
-            self.parent_cx.llvm_module
+            self.parent_cx
+                .llvm_module
                 .add_function_with_attrs(&fn_name, llty, &attrs)
         }
     }
@@ -1739,7 +1764,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         let thefn = self.get_runtime_function_by_name("abort");
         let param_ty = self.parent_cx.llvm_cx.int_type(64);
         let const_llval = llvm::Constant::int(param_ty, U256::from(val));
-        self.parent_cx.llvm_builder.build_call_imm(thefn, &[const_llval]);
+        self.parent_cx
+            .llvm_builder
+            .build_call_imm(thefn, &[const_llval]);
         self.parent_cx.llvm_builder.build_unreachable();
     }
 }
