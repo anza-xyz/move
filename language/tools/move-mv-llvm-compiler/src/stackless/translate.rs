@@ -643,7 +643,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     curr_signer += 1;
                     let addr_val = BigUint::parse_bytes(signer.unwrap().as_bytes(), 16);
                     let c = self.constant(&sbc::Constant::Address(addr_val.unwrap()));
-                    self.parent_cx.llvm_builder.build_store(c.get0(), local.llval);
+                    self.parent_cx
+                        .llvm_builder
+                        .build_store(c.get0(), local.llval);
                 } else {
                     self.parent_cx
                         .llvm_builder
@@ -1618,7 +1620,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     .iter()
                     .map(|l| (l.llty, l.llval))
                     .collect::<Vec<_>>();
-                self.parent_cx.llvm_builder.load_call_store(ll_fn, &src, &dst);
+                self.parent_cx
+                    .llvm_builder
+                    .load_call_store(ll_fn, &src, &dst);
             }
         }
     }
