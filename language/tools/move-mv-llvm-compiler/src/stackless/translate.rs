@@ -218,14 +218,14 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
 
         // Create a combined list of all structs (external plus local).
         let mut local_structs: Vec<_> = m_env.get_structs().collect();
-        let mut all_structs: Vec<_> = external_sqids
+        let mut combined_structs: Vec<_> = external_sqids
             .iter()
             .map(|q| g_env.get_struct_qid(*q))
             .collect();
-        all_structs.append(&mut local_structs);
+        combined_structs.append(&mut local_structs);
 
-        let mut all: Vec<(mm::StructEnv, Vec<mty::Type>)> = Vec::new();
-        for s_env in &all_structs {
+        let mut all_structs: Vec<(mm::StructEnv, Vec<mty::Type>)> = Vec::new();
+        for s_env in &combined_structs {
             if !s_env.get_type_parameters().is_empty() {
                 // This is a generic structure handle (i.e., representing potentially many
                 // concrete structures). The expansions will occur when the struct definition
@@ -233,10 +233,10 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
                 continue;
             }
             let p = (s_env.clone(), vec![]);
-            all.push(p);
+            all_structs.push(p);
         }
 
-        debug!(target: "structs", "{}", self.dump_all_structs(&all, false));
+        debug!(target: "structs", "{}", self.dump_all_structs(&all_structs, false));
 
         // Visit each struct definition, creating corresponding LLVM IR struct types.
         //
@@ -249,7 +249,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         // That is, on the first traversal, we create opaque structs (i.e., partially formed,
         // deferring field translation). The second traversal will then fill in the struct bodies
         // where it will have all structure types previously defined.
-        for (s_env, _) in &all {
+        for (s_env, _) in &all_structs {
             if !s_env.get_type_parameters().is_empty() {
                 unreachable!("");
             }
@@ -266,7 +266,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             let s_env = m_env.get_struct_by_def_idx(s_def_inst.def);
             let ll_name = self.ll_struct_name_from_raw_name(&s_env, &tys);
             self.llvm_cx.create_opaque_named_struct(&ll_name);
-            all.push((s_env, tys));
+            all_structs.push((s_env, tys));
         }
 
         // Similarly, pull in generics from field instantiations.
@@ -277,7 +277,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             let ll_name = self.ll_struct_name_from_raw_name(&s_env, &tys);
             if self.llvm_cx.named_struct_type(&ll_name).is_none() {
                 self.llvm_cx.create_opaque_named_struct(&ll_name);
-                all.push((s_env, tys));
+                all_structs.push((s_env, tys));
             }
         }
 
@@ -296,7 +296,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
                     let ll_name = self.ll_struct_name_from_raw_name(&s_env, &tys);
                     if self.llvm_cx.named_struct_type(&ll_name).is_none() {
                         self.llvm_cx.create_opaque_named_struct(&ll_name);
-                        all.push((s_env, tys));
+                        all_structs.push((s_env, tys));
                     }
                 } else {
                     unreachable!("");
@@ -304,7 +304,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             }
         }
 
-        debug!(target: "structs", "{}", self.dump_all_structs(&all, false));
+        debug!(target: "structs", "{}", self.dump_all_structs(&all_structs, false));
 
         // Translate input IR representing Move struct MyMod::MyStruct:
         //   struct MyStruct has { copy, drop, key, store } {
@@ -328,7 +328,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         //
         // As the compiler evolves and the design comes into focus, additional fields may be added
         // or existing fields changed or removed.
-        for (s_env, tyvec) in &all {
+        for (s_env, tyvec) in &all_structs {
             let ll_name = self.ll_struct_name_from_raw_name(s_env, tyvec);
             let ll_sty = self
                 .llvm_cx
@@ -347,7 +347,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             ll_sty.set_struct_body(&ll_field_tys);
         }
 
-        debug!(target: "structs", "{}", self.dump_all_structs(&all, true));
+        debug!(target: "structs", "{}", self.dump_all_structs(&all_structs, true));
     }
 
     fn llvm_type_with_ty_params(&self, mty: &mty::Type, tyvec: &[mty::Type]) -> llvm::Type {
