@@ -456,7 +456,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
                     continue;
                 }
                 for fi in &fn_instantiations[&fn_qid] {
-                    let inst_is_generic = fi.into_iter().any(|t| t.is_open());
+                    let inst_is_generic = fi.iter().any(|t| t.is_open());
                     if inst_is_generic {
                         continue;
                     }
