@@ -135,7 +135,12 @@ fn type_name(mty: &mty::Type, type_display_ctx: &mty::TypeDisplayContext) -> Str
 fn type_descrim(mty: &mty::Type) -> u64 {
     use mty::{PrimitiveType, Type};
     match mty {
+        Type::Primitive(PrimitiveType::U8) => TypeDesc::U8 as u64,
+        Type::Primitive(PrimitiveType::U16) => TypeDesc::U16 as u64,
+        Type::Primitive(PrimitiveType::U32) => TypeDesc::U32 as u64,
         Type::Primitive(PrimitiveType::U64) => TypeDesc::U64 as u64,
+        Type::Primitive(PrimitiveType::U128) => TypeDesc::U128 as u64,
+        Type::Primitive(PrimitiveType::U256) => TypeDesc::U256 as u64,
         Type::Vector(_) => TypeDesc::Vector as u64,
         _ => todo!(),
     }
@@ -159,11 +164,16 @@ fn define_type_info_global(
         None => {
             use mty::{PrimitiveType, Type};
             match mty {
-                Type::Primitive(PrimitiveType::U64) => {
-                    define_type_info_global_nil(llcx, llmod, &symbol_name)
-                }
+                _ if !has_type_info(mty) => define_type_info_global_nil(llcx, llmod, &symbol_name),
                 Type::Vector(elt_ty) => match **elt_ty {
-                    Type::Primitive(PrimitiveType::U64) => define_type_info_global_vec(
+                    Type::Primitive(
+                        PrimitiveType::U8
+                        | PrimitiveType::U16
+                        | PrimitiveType::U32
+                        | PrimitiveType::U64
+                        | PrimitiveType::U128
+                        | PrimitiveType::U256,
+                    ) => define_type_info_global_vec(
                         llcx,
                         llmod,
                         &symbol_name,
@@ -230,10 +240,26 @@ fn global_tydesc_name_name(mty: &mty::Type, type_display_ctx: &mty::TypeDisplayC
     format!("__move_rttydesc_{name}_name")
 }
 
+fn has_type_info(mty: &mty::Type) -> bool {
+    use mty::{PrimitiveType, Type};
+    match mty {
+        Type::Primitive(
+            PrimitiveType::U8
+            | PrimitiveType::U16
+            | PrimitiveType::U32
+            | PrimitiveType::U64
+            | PrimitiveType::U128
+            | PrimitiveType::U256,
+        ) => false,
+        Type::Vector(_) => true,
+        _ => todo!(),
+    }
+}
+
 fn global_tydesc_info_name(mty: &mty::Type, type_display_ctx: &mty::TypeDisplayContext) -> String {
     use mty::{PrimitiveType, Type};
     let name = match mty {
-        Type::Primitive(_) => {
+        _ if !has_type_info(mty) => {
             // A special name for types that don't need type info.
             "NOTHING".to_string()
         }
