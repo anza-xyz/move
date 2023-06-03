@@ -152,7 +152,11 @@ impl Context {
     pub fn const_array(&self, vals: &Vec<Constant>, llty: Type) -> ArrayValue {
         let mut llvals: Vec<_> = vals.iter().map(|v| v.get0()).collect();
         unsafe {
-            ArrayValue(LLVMConstArray(llty.0, llvals.as_mut_ptr(), vals.len() as u32))
+            ArrayValue(LLVMConstArray(
+                llty.0,
+                llvals.as_mut_ptr(),
+                vals.len() as u32,
+            ))
         }
     }
 

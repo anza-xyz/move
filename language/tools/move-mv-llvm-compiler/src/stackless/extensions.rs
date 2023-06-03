@@ -71,10 +71,8 @@ pub impl TypeExt for mty::Type {
     }
 
     fn is_number_u8(&self) -> bool {
-        if let mty::Type::Primitive(p) = self {
-            if let mty::PrimitiveType::U8 = p {
-                return true;
-            }
+        if let mty::Type::Primitive(mty::PrimitiveType::U8) = self {
+            return true;
         }
         false
     }

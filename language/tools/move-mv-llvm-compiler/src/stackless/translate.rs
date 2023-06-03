@@ -823,7 +823,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
             .into_function(qiid.id);
         let sname = fn_env.llvm_symbol_name(&qiid.inst);
         let decl = self.module_cx.fn_decls.get(&sname);
-        assert!(!decl.is_none(), "move fn decl not found: {}", sname);
+        assert!(decl.is_some(), "move fn decl not found: {}", sname);
         *decl.unwrap()
     }
 
@@ -834,7 +834,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
             .into_function(qid.id);
         let sname = fn_env.llvm_native_fn_symbol_name();
         let decl = self.module_cx.fn_decls.get(&sname);
-        assert!(!decl.is_none(), "native fn decl not found: {}", sname);
+        assert!(decl.is_some(), "native fn decl not found: {}", sname);
         *decl.unwrap()
     }
 
@@ -1026,7 +1026,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                         self.emit_rtcall_with_retval(RtCall::VecCopy(
                             dst_llval.as_any_value(),
                             src_llval.as_any_value(),
-                            (**elt_mty).clone()
+                            (**elt_mty).clone(),
                         ));
                     }
                     mty::Type::Reference(_, referent) => match **referent {
@@ -1204,7 +1204,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         let src_ty = self.locals[src_idx].llty;
         self.module_cx
             .llvm_builder
-            .build_load(src_ty, src_llval, name).get0()
+            .build_load(src_ty, src_llval, name)
+            .get0()
     }
 
     fn store_reg(&self, dst_idx: mast::TempIndex, dst_reg: LLVMValueRef) {
@@ -1446,13 +1447,14 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
             _ => unreachable!(),
         };
         assert!(vec_elt_cmp_mty.is_number() || vec_elt_cmp_mty.is_bool());
-        assert!(pred == llvm::LLVMIntPredicate::LLVMIntEQ
-             || pred == llvm::LLVMIntPredicate::LLVMIntNE);
+        assert!(
+            pred == llvm::LLVMIntPredicate::LLVMIntEQ || pred == llvm::LLVMIntPredicate::LLVMIntNE
+        );
 
         let dst_reg = self.emit_rtcall_with_retval(RtCall::VecCmpEq(
             self.locals[src[0]].llval.as_any_value(),
             self.locals[src[1]].llval.as_any_value(),
-            vec_elt_cmp_mty.clone()
+            vec_elt_cmp_mty.clone(),
         ));
         self.store_reg(dst[0], dst_reg.get0());
     }
@@ -2133,7 +2135,11 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 // Unpack the Constant vector literal data and repack as LLVM constants in a global
                 // array value containing vector literal data.
                 let vmty = vec_mty.unwrap();
-                let elt_mty = if let Type::Vector(et) = vmty { &**et } else { unreachable!() };
+                let elt_mty = if let Type::Vector(et) = vmty {
+                    &**et
+                } else {
+                    unreachable!()
+                };
                 let aval = match elt_mty {
                     Type::Primitive(PrimitiveType::Bool)
                     | Type::Primitive(PrimitiveType::U8)
@@ -2142,19 +2148,17 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     | Type::Primitive(PrimitiveType::U64)
                     | Type::Primitive(PrimitiveType::U128)
                     | Type::Primitive(PrimitiveType::U256) => {
-                        eprintln!("here primitive case {}", format!("{:?}", vmty));
-                        let vals = self.rewrap_vec_constant(&val_vec);
+                        let vals = self.rewrap_vec_constant(val_vec);
                         llcx.const_array(&vals, self.llvm_type(elt_mty)).as_const()
                     }
                     Type::Vector(bt) if bt.is_number_u8() => {
                         // This is a Constant::ByteArray element type.
                         assert!(matches!(val_vec[0], Constant::ByteArray(_)));
-                        eprintln!("here bytearray case {}", format!("{:?}", vmty));
                         todo!();
                     }
                     _ => {
-                       eprintln!("unexpected vec constant: {}: {:#?}", val_vec.len(), val_vec);
-                       todo!("{:?}", vmty);
+                        eprintln!("unexpected vec constant: {}: {:#?}", val_vec.len(), val_vec);
+                        todo!("{:?}", vmty);
                     }
                 };
 
@@ -2169,13 +2173,11 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 // Create an LLVM global containing the vector descriptor (to be passed to the
                 // runtime) and initialize it with the array created above. The format of the
                 // descriptor corresponds to 'move_native::rt_types::MoveUntypedVector'
-                let vec_descriptor_init = llcx.const_struct(
-                    &[
-                        raw_vec_data.ptr(),
-                        ll_int(64, val_vec.len() as u128),
-                        ll_int(64, val_vec.len() as u128),
-                    ],
-                );
+                let vec_descriptor_init = llcx.const_struct(&[
+                    raw_vec_data.ptr(),
+                    ll_int(64, val_vec.len() as u128),
+                    ll_int(64, val_vec.len() as u128),
+                ]);
                 let vec_descriptor = self
                     .module_cx
                     .llvm_module
@@ -2212,7 +2214,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 // Resume insertionn at the current block.
                 builder.position_at_end(curr_bb);
 
-                self.module_cx.llvm_builder.build_store(res_val.get0(), res_ptr);
+                self.module_cx
+                    .llvm_builder
+                    .build_store(res_val.get0(), res_ptr);
 
                 self.emit_rtcall_with_retval(RtCall::VecCopy(
                     res_ptr.as_any_value(),
@@ -2225,12 +2229,10 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     .llvm_builder
                     .build_load(res_val.llvm_type(), res_ptr, "reload")
                     .as_constant()
-
             }
-            Constant::AddressArray(val_vec) => {
+            Constant::AddressArray(_val_vec) => {
                 // This is just like Constant(Vector(_)) above, but the stackless bytecode
                 // currently treats it inconsistently as a special case.
-                eprintln!("vec constant: {}: {:#?}", val_vec.len(), val_vec);
                 let vmty = vec_mty.unwrap();
                 todo!("{:?}", vmty);
             }
@@ -2241,18 +2243,17 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
     // Transform `Vec<sbc::Constant>` to `Vec<llvm::Constant>`.
     fn rewrap_vec_constant(&self, vc: &[sbc::Constant]) -> Vec<llvm::Constant> {
         use sbc::Constant;
-        let retvec = vc.iter()
-            .map(|v| {
-                match v {
-                    Constant::Bool(_) => self.constant(v, None),
-                    Constant::U8(_) => self.constant(v, None),
-                    Constant::U16(_) => self.constant(v, None),
-                    Constant::U32(_) => self.constant(v, None),
-                    Constant::U64(_) => self.constant(v, None),
-                    Constant::U128(_) => self.constant(v, None),
-                    Constant::U256(_) => self.constant(v, None),
-                    _ => unreachable!("{:?}", v)
-                }
+        let retvec = vc
+            .iter()
+            .map(|v| match v {
+                Constant::Bool(_) => self.constant(v, None),
+                Constant::U8(_) => self.constant(v, None),
+                Constant::U16(_) => self.constant(v, None),
+                Constant::U32(_) => self.constant(v, None),
+                Constant::U64(_) => self.constant(v, None),
+                Constant::U128(_) => self.constant(v, None),
+                Constant::U256(_) => self.constant(v, None),
+                _ => unreachable!("{:?}", v),
             })
             .collect();
         retvec
@@ -2295,7 +2296,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 let mut typarams: Vec<_> = self
                     .get_rttydesc_ptrs(&[elt_mty.clone()])
                     .iter()
-                    .map(|llval| llval.as_any_value()).collect();
+                    .map(|llval| llval.as_any_value())
+                    .collect();
                 typarams.push(*ll_dst_value);
                 typarams.push(*ll_src_value);
                 self.module_cx.llvm_builder.call(llfn, &typarams)
@@ -2305,7 +2307,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 let mut typarams: Vec<_> = self
                     .get_rttydesc_ptrs(&[elt_mty.clone()])
                     .iter()
-                    .map(|llval| llval.as_any_value()).collect();
+                    .map(|llval| llval.as_any_value())
+                    .collect();
                 typarams.push(*ll_dst_value);
                 typarams.push(*ll_src_value);
                 self.module_cx.llvm_builder.call(llfn, &typarams)
@@ -2315,7 +2318,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                 let typarams: Vec<_> = self
                     .get_rttydesc_ptrs(&[elt_mty.clone()])
                     .iter()
-                    .map(|llval| llval.as_any_value()).collect();
+                    .map(|llval| llval.as_any_value())
+                    .collect();
                 self.module_cx.llvm_builder.call(llfn, &typarams)
             }
             _ => unreachable!(),
