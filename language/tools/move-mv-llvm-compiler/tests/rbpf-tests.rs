@@ -337,7 +337,7 @@ impl<'a, 'b> LazyAnalysis<'a, 'b> {
 
 fn output_trace(filename: &str, trace: &[[u64; 12]], frame: usize, analysis: &mut LazyAnalysis) {
     use std::{fs::File, io::Write};
-    if filename == "" || filename == "stdout" {
+    if filename.is_empty() || filename == "stdout" {
         writeln!(&mut std::io::stdout(), "Frame {frame}").unwrap();
         analysis
             .analyze()
