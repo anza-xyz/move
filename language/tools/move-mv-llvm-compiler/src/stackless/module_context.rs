@@ -62,6 +62,8 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             fn_cx.translate();
         }
 
+        self.emit_solana_entrypoint();
+
         self.llvm_module.verify();
     }
 
@@ -831,5 +833,213 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             attrs.push((attr_idx, "readonly", None));
         }
         attrs
+    }
+
+    fn generate_global_str_slice(&self, s: &str) -> llvm::Global {
+        let llcx = &self.llvm_cx;
+
+        // Create an LLVM global for the string.
+        let str_literal_init = llcx.const_int_array::<u8>(s.as_bytes()).as_const();
+        let str_literal = self
+            .llvm_module
+            .add_global2(str_literal_init.llvm_type(), "str_literal");
+        str_literal.set_constant();
+        str_literal.set_alignment(1);
+        str_literal.set_unnamed_addr();
+        str_literal.set_linkage(llvm::LLVMLinkage::LLVMPrivateLinkage);
+        str_literal.set_initializer(str_literal_init);
+
+        // Create an LLVM global for the slice, which is a struct with two fields:
+        // - pointer to the string literal
+        // - integer length of the string literal
+        let slice_len = s.len();
+        let slice_init = llcx.const_struct(&[
+            str_literal.ptr(),
+            llcx.const_int_array::<u8>(&slice_len.to_le_bytes())
+                .as_const(),
+        ]);
+        let slice = self
+            .llvm_module
+            .add_global2(slice_init.llvm_type(), "str_slice");
+        slice.set_constant();
+        slice.set_alignment(8);
+        slice.set_unnamed_addr();
+        slice.set_linkage(llvm::LLVMLinkage::LLVMPrivateLinkage);
+        slice.set_initializer(slice_init);
+
+        slice
+    }
+
+    fn emit_solana_entrypoint(&mut self) {
+        let entry_functions: Vec<_> = self
+            .env
+            .get_functions()
+            .filter(|fn_env| fn_env.is_entry())
+            .collect();
+        // Do not generate solana entrypoint if this is a script
+        if entry_functions.is_empty()
+            || entry_functions
+                .iter()
+                .any(|fn_env| fn_env.get_name_str() == "<SELF>")
+        {
+            return;
+        }
+
+        let deserialize = String::from("deserialize");
+        let ll_sret = self.llvm_cx.get_anonymous_struct_type(&[
+            self.llvm_cx
+                .get_anonymous_struct_type(&[self.llvm_cx.ptr_type(), self.llvm_cx.int_type(64)]),
+            self.llvm_cx.ptr_type(),
+            self.llvm_cx.get_anonymous_struct_type(&[
+                self.llvm_cx.ptr_type(),
+                self.llvm_cx.int_type(64),
+                self.llvm_cx.int_type(64),
+            ]),
+        ]);
+        let ll_fn_deserialize = {
+            let ll_fnty = {
+                let ll_rty = self.llvm_cx.void_type();
+                let sret_param = self.llvm_cx.ptr_type();
+                let ll_param_tys = vec![sret_param, self.llvm_cx.ptr_type()];
+                llvm::FunctionType::new(ll_rty, &ll_param_tys)
+            };
+            let ll_fn = self.llvm_module.add_function(&deserialize, ll_fnty);
+            self.llvm_module
+                .add_type_attribute(ll_fn, 1, "sret", ll_sret.0);
+            ll_fn
+        };
+        ll_fn_deserialize
+            .as_gv()
+            .set_linkage(llvm::LLVMLinkage::LLVMExternalLinkage);
+        //self.fn_decls.insert(deserialize, ll_fn_deserialize);
+
+        let ret_ty = self.llvm_cx.int_type(1);
+        let len_ty = self.llvm_cx.int_type(64);
+        let ptr_ty = self.llvm_cx.ptr_type();
+        let ll_param_tys = &[ptr_ty, len_ty, ptr_ty, len_ty];
+        let ll_fnty = llvm::FunctionType::new(ret_ty, ll_param_tys);
+        let attrs = vec![
+            (1, "readonly", None),
+            (1, "nonnull", None),
+            (3, "readonly", None),
+            (3, "nonnull", None),
+        ];
+        let ll_fn_str_cmp = self.llvm_module.add_function("move_rt_str_cmp_eq", ll_fnty);
+        self.llvm_module.add_attributes(ll_fn_str_cmp, &attrs);
+
+        let ll_fn_solana_entrypoint = {
+            let ll_fnty = {
+                let ll_rty = self.llvm_cx.int_type(64_usize);
+                let ll_param_tys = vec![self.llvm_cx.ptr_type()];
+                llvm::FunctionType::new(ll_rty, &ll_param_tys)
+            };
+            self.llvm_module.add_function("main", ll_fnty)
+        };
+        //self.fn_decls.insert(ll_sym_name, ll_fn);
+
+        let entry_block = ll_fn_solana_entrypoint.append_basic_block("entry");
+        self.llvm_builder.position_at_end(entry_block);
+        let retval = self
+            .llvm_builder
+            .build_alloca(self.llvm_cx.int_type(64), "retval")
+            .as_any_value();
+        let params = self
+            .llvm_builder
+            .build_alloca(ll_sret, "params")
+            .as_any_value();
+        let str_slice_type = self
+            .llvm_cx
+            .get_anonymous_struct_type(&[self.llvm_cx.ptr_type(), self.llvm_cx.int_type(64)]);
+
+        // Get inputs from the VM into proper data structures.
+        let input = vec![params, ll_fn_solana_entrypoint.get_param(0).as_any_value()];
+        self.llvm_builder.call(ll_fn_deserialize, &input);
+
+        let insn_data = self.llvm_builder.getelementptr(
+            params,
+            &ll_sret.as_struct_type(),
+            0,
+            "instruction_data",
+        );
+        let insn_data_ptr = self.llvm_builder.getelementptr(
+            insn_data,
+            &str_slice_type.as_struct_type(),
+            0,
+            "insn_data_ptr",
+        );
+        let insn_data_ptr = self.llvm_builder.load(
+            insn_data_ptr,
+            self.llvm_cx.ptr_type(),
+            "insn_data_ptr_loaded",
+        );
+        let insn_data_len = self.llvm_builder.getelementptr(
+            insn_data,
+            &str_slice_type.as_struct_type(),
+            1,
+            "insn_data_len",
+        );
+        let insn_data_len = self.llvm_builder.load(
+            insn_data_len,
+            self.llvm_cx.int_type(64),
+            "insn_data_len_loaded",
+        );
+
+        let curr_bb = self.llvm_builder.get_insert_block();
+        let exit_bb = ll_fn_solana_entrypoint.insert_basic_block_after(curr_bb, "exit_bb");
+
+        for fun in entry_functions {
+            let entry = self.generate_global_str_slice(fun.llvm_symbol_name(&[]).as_str());
+
+            let func_name_ptr = self.llvm_builder.getelementptr(
+                entry.as_any_value(),
+                &str_slice_type.as_struct_type(),
+                0,
+                "entry_func_ptr",
+            );
+            let func_name_ptr = self.llvm_builder.load(
+                func_name_ptr,
+                self.llvm_cx.ptr_type(),
+                "entry_func_ptr_loaded",
+            );
+            let func_name_len = self.llvm_builder.getelementptr(
+                entry.as_any_value(),
+                &str_slice_type.as_struct_type(),
+                1,
+                "entry_func_len",
+            );
+            let func_name_len = self.llvm_builder.load(
+                func_name_len,
+                self.llvm_cx.int_type(64),
+                "entry_func_len_loaded",
+            );
+
+            let typarams = [insn_data_ptr, insn_data_len, func_name_ptr, func_name_len];
+
+            let condition = self.llvm_builder.call(ll_fn_str_cmp, &typarams);
+
+            let curr_bb = self.llvm_builder.get_insert_block();
+
+            let then_bb = ll_fn_solana_entrypoint.insert_basic_block_after(curr_bb, "then_bb");
+            let else_bb = ll_fn_solana_entrypoint.insert_basic_block_after(then_bb, "else_bb");
+            self.llvm_builder.build_cond_br(condition, then_bb, else_bb);
+            self.llvm_builder.position_at_end(then_bb);
+            let fn_name = fun.llvm_symbol_name(&[]);
+            let ll_fun = self.fn_decls.get(&fn_name).unwrap();
+            let ret = self.llvm_builder.call(*ll_fun, &[]);
+            self.llvm_builder.store(ret, retval);
+            self.llvm_builder.build_br(exit_bb);
+            self.llvm_builder.position_at_end(else_bb);
+        }
+        let ret = llvm::Constant::int(self.llvm_cx.int_type(64), U256::zero()).as_any_value();
+        self.llvm_builder.store(ret, retval);
+        self.llvm_builder.build_br(exit_bb);
+        self.llvm_builder.position_at_end(exit_bb);
+        let ret = self
+            .llvm_builder
+            .load(retval, self.llvm_cx.int_type(64), "exit_code");
+        self.llvm_builder.build_return(ret);
+        ll_fn_solana_entrypoint.verify();
+
+        self.llvm_module.dump();
     }
 }

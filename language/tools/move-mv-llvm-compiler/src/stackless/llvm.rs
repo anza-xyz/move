@@ -96,6 +96,10 @@ impl Context {
         unsafe { Type(LLVMIntTypeInContext(self.0, len as libc::c_uint)) }
     }
 
+    pub fn ptr_type(&self) -> Type {
+        unsafe { Type(LLVMPointerTypeInContext(self.0, 0)) }
+    }
+
     pub fn array_type(&self, ll_elt_ty: Type, len: usize) -> Type {
         unsafe { Type(LLVMArrayType(ll_elt_ty.0, len as libc::c_uint)) }
     }
@@ -284,6 +288,26 @@ impl Module {
         }
     }
 
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    pub fn add_type_attribute(
+        &self,
+        func: Function,
+        idx: llvm_sys::LLVMAttributeIndex,
+        name: &str,
+        ty: LLVMTypeRef,
+    ) {
+        unsafe {
+            let cx = LLVMGetModuleContext(self.0);
+            let kind_id = get_attr_kind_for_name(name);
+            let attr_ref = LLVMCreateTypeAttribute(
+                cx,
+                kind_id.expect("attribute not found") as libc::c_uint,
+                ty,
+            );
+            LLVMAddAttributeAtIndex(func.0, idx, attr_ref);
+        }
+    }
+
     pub fn declare_known_functions(&self) {
         // Declare i32 @memcmp(ptr, ptr, i64).
         unsafe {
@@ -444,6 +468,38 @@ impl Builder {
         }
     }
 
+    /// Get a struct element.
+    pub fn getelementptr(
+        &self,
+        val: AnyValue,
+        struct_ty: &StructType,
+        offset: usize,
+        name: &str,
+    ) -> AnyValue {
+        unsafe {
+            let ptr = LLVMBuildStructGEP2(
+                self.0,
+                struct_ty.0,
+                val.0,
+                offset as libc::c_uint,
+                name.cstr(),
+            );
+            AnyValue(ptr)
+        }
+    }
+
+    /// Load a value.
+    pub fn load(&self, val: AnyValue, ty: Type, name: &str) -> AnyValue {
+        unsafe { AnyValue(LLVMBuildLoad2(self.0, ty.0, val.0, name.cstr())) }
+    }
+
+    /// Store a value.
+    pub fn store(&self, val: AnyValue, ptr: AnyValue) {
+        unsafe {
+            LLVMBuildStore(self.0, val.0, ptr.0);
+        }
+    }
+
     // Load the source fields, insert them into a new struct value, then store the struct value.
     pub fn insert_fields_and_store(
         &self,
@@ -537,6 +593,12 @@ impl Builder {
     pub fn build_return_void(&self) {
         unsafe {
             LLVMBuildRetVoid(self.0);
+        }
+    }
+
+    pub fn build_return(&self, val: AnyValue) {
+        unsafe {
+            LLVMBuildRet(self.0, val.0);
         }
     }
 
@@ -1037,6 +1099,12 @@ impl Global {
         AnyValue(self.0)
     }
 
+    pub fn set_alignment(&self, align: usize) {
+        unsafe {
+            LLVMSetAlignment(self.0, align as libc::c_uint);
+        }
+    }
+
     pub fn set_constant(&self) {
         unsafe {
             LLVMSetGlobalConstant(self.0, true as i32);
@@ -1077,7 +1145,11 @@ impl Global {
 
 pub struct Parameter(LLVMValueRef);
 
-impl Parameter {}
+impl Parameter {
+    pub fn as_any_value(&self) -> AnyValue {
+        AnyValue(self.0)
+    }
+}
 
 pub struct Constant(LLVMValueRef);
 
