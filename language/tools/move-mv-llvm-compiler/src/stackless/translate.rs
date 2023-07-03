@@ -2542,11 +2542,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     let vector_ty = llcx.int_type(8).ptr_type();
                     let param_tys = &[tydesc_ty, vector_ty];
                     let llty = llvm::FunctionType::new(ret_ty, param_tys);
-                    let attrs = vec![
-                        (1, "readonly", None),
-                        (1, "nonnull", None),
-                        (1, "dereferenceable", Some(MOVE_TYPE_DESC_SIZE)),
-                    ];
+                    let attrs = self.mk_pattrs_for_move_type(1);
                     (llty, attrs)
                 }
                 "vec_copy" => {
@@ -2558,16 +2554,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     let vector_ty = llcx.int_type(8).ptr_type();
                     let param_tys = &[tydesc_ty, vector_ty, vector_ty];
                     let llty = llvm::FunctionType::new(ret_ty, param_tys);
-                    let attrs = vec![
-                        (1, "readonly", None),
-                        (1, "nonnull", None),
-                        (1, "dereferenceable", Some(MOVE_TYPE_DESC_SIZE)),
-                        (2, "nonnull", None),
-                        (2, "dereferenceable", Some(MOVE_UNTYPED_VEC_DESC_SIZE)),
-                        (3, "readonly", None),
-                        (3, "nonnull", None),
-                        (3, "dereferenceable", Some(MOVE_UNTYPED_VEC_DESC_SIZE)),
-                    ];
+                    let mut attrs = self.mk_pattrs_for_move_type(1);
+                    attrs.extend(self.mk_pattrs_for_move_untyped_vec(2, true /* mut */));
+                    attrs.extend(self.mk_pattrs_for_move_untyped_vec(3, false /* !mut */));
                     (llty, attrs)
                 }
                 "vec_cmp_eq" => {
@@ -2579,17 +2568,9 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     let vector_ty = llcx.int_type(8).ptr_type();
                     let param_tys = &[tydesc_ty, vector_ty, vector_ty];
                     let llty = llvm::FunctionType::new(ret_ty, param_tys);
-                    let attrs = vec![
-                        (1, "readonly", None),
-                        (1, "nonnull", None),
-                        (1, "dereferenceable", Some(MOVE_TYPE_DESC_SIZE)),
-                        (2, "readonly", None),
-                        (2, "nonnull", None),
-                        (2, "dereferenceable", Some(MOVE_UNTYPED_VEC_DESC_SIZE)),
-                        (3, "readonly", None),
-                        (3, "nonnull", None),
-                        (3, "dereferenceable", Some(MOVE_UNTYPED_VEC_DESC_SIZE)),
-                    ];
+                    let mut attrs = self.mk_pattrs_for_move_type(1);
+                    attrs.extend(self.mk_pattrs_for_move_untyped_vec(2, false /* !mut */));
+                    attrs.extend(self.mk_pattrs_for_move_untyped_vec(3, false /* !mut */));
                     (llty, attrs)
                 }
                 "vec_empty" => {
@@ -2598,11 +2579,7 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     let tydesc_ty = llcx.int_type(8).ptr_type();
                     let param_tys = &[tydesc_ty];
                     let llty = llvm::FunctionType::new(ret_ty, param_tys);
-                    let attrs = vec![
-                        (1, "readonly", None),
-                        (1, "nonnull", None),
-                        (1, "dereferenceable", Some(MOVE_TYPE_DESC_SIZE)),
-                    ];
+                    let attrs = self.mk_pattrs_for_move_type(1);
                     (llty, attrs)
                 }
                 n => panic!("unknown runtime function {n}"),
@@ -2612,6 +2589,44 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
             llmod.add_attributes(ll_fn, &attrs);
             ll_fn
         }
+    }
+
+    fn mk_pattrs_for_move_type(
+        &self,
+        attr_idx: llvm::LLVMAttributeIndex,
+    ) -> Vec<(llvm::LLVMAttributeIndex, &'static str, Option<u64>)> {
+        assert!(
+            attr_idx != llvm::LLVMAttributeReturnIndex
+                && attr_idx != llvm::LLVMAttributeFunctionIndex
+        );
+        vec![
+            (attr_idx, "readonly", None),
+            (attr_idx, "nonnull", None),
+            (attr_idx, "dereferenceable", Some(MOVE_TYPE_DESC_SIZE)),
+        ]
+    }
+
+    fn mk_pattrs_for_move_untyped_vec(
+        &self,
+        attr_idx: llvm::LLVMAttributeIndex,
+        mutable: bool,
+    ) -> Vec<(llvm::LLVMAttributeIndex, &'static str, Option<u64>)> {
+        assert!(
+            attr_idx != llvm::LLVMAttributeReturnIndex
+                && attr_idx != llvm::LLVMAttributeFunctionIndex
+        );
+        let mut attrs = vec![
+            (attr_idx, "nonnull", None),
+            (
+                attr_idx,
+                "dereferenceable",
+                Some(MOVE_UNTYPED_VEC_DESC_SIZE),
+            ),
+        ];
+        if !mutable {
+            attrs.push((attr_idx, "readonly", None));
+        }
+        attrs
     }
 
     fn emit_rtcall_abort_raw(&self, val: u64) {
