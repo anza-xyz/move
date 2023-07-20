@@ -332,7 +332,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         for sig in cm.signatures() {
             for st in &sig.0 {
                 let mut inst_signatures: Vec<SignatureToken> = Vec::new();
-                Self::find_struct_instantiation_signatures(st, &mut inst_signatures);
+                SignatureToken::find_struct_instantiation_signatures(st, &mut inst_signatures);
                 for sti in &inst_signatures {
                     let gs = m_env.globalize_signature(sti);
                     if let mty::Type::Struct(mid, sid, tys) = gs {
@@ -377,28 +377,6 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         }
 
         debug!(target: "structs", "{}", self.dump_all_structs(&all_structs, true));
-    }
-
-    pub fn find_struct_instantiation_signatures(
-        sig: &SignatureToken,
-        inst_signatures: &mut Vec<SignatureToken>,
-    ) {
-        match sig {
-            SignatureToken::Reference(t) | SignatureToken::MutableReference(t) => {
-                Self::find_struct_instantiation_signatures(t, inst_signatures);
-            }
-            SignatureToken::Vector(bt) => {
-                Self::find_struct_instantiation_signatures(bt, inst_signatures);
-            }
-            SignatureToken::StructInstantiation(_, args) => {
-                // Instantiations may contain nested instantiations.
-                for arg in args {
-                    Self::find_struct_instantiation_signatures(arg, inst_signatures);
-                }
-                inst_signatures.push(sig.clone());
-            }
-            _ => {}
-        };
     }
 
     fn llvm_type_with_ty_params(&self, mty: &mty::Type, tyvec: &[mty::Type]) -> llvm::Type {
@@ -717,7 +695,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             | Type::Primitive(PrimitiveType::U64)
             | Type::Primitive(PrimitiveType::U128)
             | Type::Primitive(PrimitiveType::U256) => {
-                self.llvm_cx.int_type(self.get_bitwidth(mty) as usize)
+                self.llvm_cx.int_type(mty.get_bitwidth() as usize)
             }
             Type::Primitive(PrimitiveType::Address) => self.get_llvm_type_for_address(),
             Type::Primitive(PrimitiveType::Signer) => self.get_llvm_type_for_signer(),
@@ -786,24 +764,6 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         // to `move_native::rt_types::MoveSigner`.
         let field_ty = self.get_llvm_type_for_address();
         self.llvm_cx.get_anonymous_struct_type(&[field_ty])
-    }
-
-    // Primitive type :: number width
-    fn get_bitwidth(&self, mty: &mty::Type) -> u64 {
-        use mty::{PrimitiveType, Type};
-
-        match mty {
-            Type::Primitive(PrimitiveType::Bool) => 1,
-            Type::Primitive(PrimitiveType::U8) => 8,
-            Type::Primitive(PrimitiveType::U16) => 16,
-            Type::Primitive(PrimitiveType::U32) => 32,
-            Type::Primitive(PrimitiveType::U64) => 64,
-            Type::Primitive(PrimitiveType::U128) => 128,
-            Type::Primitive(PrimitiveType::U256) => 256,
-            _ => {
-                todo!("{mty:?}")
-            }
-        }
     }
 
     fn create_fn_context<'this>(
@@ -987,10 +947,6 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
 
     fn llvm_type(&self, mty: &mty::Type) -> llvm::Type {
         self.module_cx.llvm_type(mty)
-    }
-
-    fn get_bitwidth(&self, mty: &mty::Type) -> u64 {
-        self.module_cx.get_bitwidth(mty)
     }
 
     fn translate_instruction(&mut self, instr: &sbc::Bytecode) {
@@ -1676,8 +1632,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         if op == llvm_sys::LLVMOpcode::LLVMShl || op == llvm_sys::LLVMOpcode::LLVMLShr {
             let src0_mty = &self.locals[src[0]].mty;
             let src1_mty = &self.locals[src[1]].mty;
-            assert_eq!(self.get_bitwidth(src1_mty), 8);
-            let src0_width = self.get_bitwidth(src0_mty);
+            assert_eq!(src1_mty.get_bitwidth(), 8);
+            let src0_width = src0_mty.get_bitwidth();
             if src0_width > 8 {
                 src1_reg = self.module_cx.llvm_builder.build_zext(
                     src1_reg,
@@ -1746,8 +1702,8 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
         let dst_mty = &self.locals[dst_idx].mty;
         assert!(src_mty.is_number());
         assert!(dst_mty.is_number());
-        let src_width = self.get_bitwidth(src_mty);
-        let dst_width = self.get_bitwidth(dst_mty);
+        let src_width = src_mty.get_bitwidth();
+        let dst_width = dst_mty.get_bitwidth();
         let src_reg = self.load_reg(src_idx, "cast_src");
 
         self.emit_precond_for_cast(src_reg, src_width, dst_width, self.llvm_type(src_mty));
