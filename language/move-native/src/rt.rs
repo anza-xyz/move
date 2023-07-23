@@ -40,17 +40,7 @@ unsafe extern "C" fn vec_cmp_eq(
 
 #[export_name = "move_rt_str_cmp_eq"]
 unsafe fn str_cmp_eq(s1: &str, s2: &str) -> bool {
-    if s1.len() != s2.len() {
-        return false;
-    }
-    let s1b = s1.as_bytes();
-    let s2b = s2.as_bytes();
-    for x in 0..s1.len() {
-        if s1b[x] != s2b[x] {
-            return false;
-        }
-    }
-    true
+    *s1 == *s2
 }
 
 #[export_name = "move_rt_struct_cmp_eq"]
