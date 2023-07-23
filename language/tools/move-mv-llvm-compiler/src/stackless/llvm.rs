@@ -454,20 +454,6 @@ impl Builder {
         }
     }
 
-    /// Add a field offset to a pointer.
-    pub fn field_ref(&self, src: Alloca, struct_ty: &StructType, offset: usize) -> AnyValue {
-        unsafe {
-            let field_ptr = LLVMBuildStructGEP2(
-                self.0,
-                struct_ty.0,
-                src.0,
-                offset as libc::c_uint,
-                "fld_ref".cstr(),
-            );
-            AnyValue(field_ptr)
-        }
-    }
-
     /// Get a struct element.
     pub fn getelementptr(
         &self,
