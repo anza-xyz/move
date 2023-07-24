@@ -62,7 +62,9 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             fn_cx.translate();
         }
 
-        self.emit_solana_entrypoint();
+        if !self.env.is_script_module() {
+            self.emit_solana_entrypoint();
+        }
 
         self.llvm_module.verify();
     }
@@ -876,12 +878,9 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             .get_functions()
             .filter(|fn_env| fn_env.is_entry())
             .collect();
-        // Do not generate solana entrypoint if this is a script
-        if entry_functions.is_empty()
-            || entry_functions
-                .iter()
-                .any(|fn_env| fn_env.get_name_str() == "<SELF>")
-        {
+
+        // Do not generate solana entrypoint if module doesn't contain any entry functions.
+        if entry_functions.is_empty() {
             return;
         }
 
