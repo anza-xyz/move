@@ -872,6 +872,25 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         slice
     }
 
+    /**
+     * Generate solana entrypoint functon code. This functions
+     * recieves serialized input paramteres from the VM. It calls
+     * native function `deserialize` to decode the parameters into
+     * corresponding data structures. The function `deserialize`
+     * returns a triple consiting of
+     * - instruction_data -- a byte array,
+     * - program_id -- SolanaPubkey, and
+     * - accounts -- a vector of SolanaAccountInfo items.
+     *
+     * To select one from possibly several entry functions defined in
+     * the module, the entrypoint function expects the name of the
+     * requested entry function to be passed in instruction_data byte
+     * array. The logic in solana entrypoint iteratively compares the
+     * string slice passed in instruction_data to every entry function
+     * symbol of the module. Once a matching entry function is found,
+     * it is called, and its return value is used as the exit code for
+     * the program.
+     */
     fn emit_solana_entrypoint(&mut self) {
         let entry_functions: Vec<_> = self
             .env
@@ -910,7 +929,6 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         ll_fn_deserialize
             .as_gv()
             .set_linkage(llvm::LLVMLinkage::LLVMExternalLinkage);
-        //self.fn_decls.insert(deserialize, ll_fn_deserialize);
 
         let ret_ty = self.llvm_cx.int_type(1);
         let len_ty = self.llvm_cx.int_type(64);
@@ -934,7 +952,6 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             };
             self.llvm_module.add_function("main", ll_fnty)
         };
-        //self.fn_decls.insert(ll_sym_name, ll_fn);
 
         let entry_block = ll_fn_solana_entrypoint.append_basic_block("entry");
         self.llvm_builder.position_at_end(entry_block);
@@ -982,10 +999,8 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             self.llvm_cx.int_type(64),
             "insn_data_len_loaded",
         );
-
         let curr_bb = self.llvm_builder.get_insert_block();
         let exit_bb = ll_fn_solana_entrypoint.insert_basic_block_after(curr_bb, "exit_bb");
-
         for fun in entry_functions {
             let entry = self.generate_global_str_slice(fun.llvm_symbol_name(&[]).as_str());
 
@@ -1011,13 +1026,9 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
                 self.llvm_cx.int_type(64),
                 "entry_func_len_loaded",
             );
-
             let typarams = [insn_data_ptr, insn_data_len, func_name_ptr, func_name_len];
-
             let condition = self.llvm_builder.call(ll_fn_str_cmp, &typarams);
-
             let curr_bb = self.llvm_builder.get_insert_block();
-
             let then_bb = ll_fn_solana_entrypoint.insert_basic_block_after(curr_bb, "then_bb");
             let else_bb = ll_fn_solana_entrypoint.insert_basic_block_after(then_bb, "else_bb");
             self.llvm_builder.build_cond_br(condition, then_bb, else_bb);
@@ -1038,7 +1049,5 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             .load(retval, self.llvm_cx.int_type(64), "exit_code");
         self.llvm_builder.build_return(ret);
         ll_fn_solana_entrypoint.verify();
-
-        self.llvm_module.dump();
     }
 }
