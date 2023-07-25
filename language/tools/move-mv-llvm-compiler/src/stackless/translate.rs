@@ -1795,7 +1795,12 @@ pub enum RtCall {
     VecCopy(llvm::AnyValue, llvm::AnyValue, mty::Type),
     VecCmpEq(llvm::AnyValue, llvm::AnyValue, mty::Type),
     VecEmpty(mty::Type),
-    StrCmpEq(llvm::AnyValue, llvm::AnyValue, llvm::AnyValue, llvm::AnyValue),
+    StrCmpEq(
+        llvm::AnyValue,
+        llvm::AnyValue,
+        llvm::AnyValue,
+        llvm::AnyValue,
+    ),
     StructCmpEq(llvm::AnyValue, llvm::AnyValue, mty::Type),
 }
 

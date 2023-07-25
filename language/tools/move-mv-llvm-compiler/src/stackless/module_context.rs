@@ -675,7 +675,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             }
             RtCall::StrCmpEq(str1_ptr, str1_len, str2_ptr, str2_len) => {
                 let llfn = self.get_runtime_function(&rtcall);
-                let params = vec!(*str1_ptr, *str1_len, *str2_ptr, *str2_len);
+                let params = vec![*str1_ptr, *str1_len, *str2_ptr, *str2_len];
                 self.llvm_builder.call(llfn, &params)
             }
             RtCall::StructCmpEq(ll_src1_value, ll_src2_value, s_mty) => {
@@ -749,7 +749,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
                     self.llvm_module
                         .add_type_attribute(ll_fn, 1, "sret", ll_sret);
                     return ll_fn;
-                },
+                }
                 "vec_destroy" => {
                     // vec_destroy(type_ve: &MoveType, v: MoveUntypedVector)
                     let ret_ty = llcx.void_type();
