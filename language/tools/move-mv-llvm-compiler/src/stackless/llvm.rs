@@ -288,13 +288,12 @@ impl Module {
         }
     }
 
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     pub fn add_type_attribute(
         &self,
         func: Function,
         idx: llvm_sys::LLVMAttributeIndex,
         name: &str,
-        ty: LLVMTypeRef,
+        ty: Type,
     ) {
         unsafe {
             let cx = LLVMGetModuleContext(self.0);
@@ -302,7 +301,7 @@ impl Module {
             let attr_ref = LLVMCreateTypeAttribute(
                 cx,
                 kind_id.expect("attribute not found") as libc::c_uint,
-                ty,
+                ty.0,
             );
             LLVMAddAttributeAtIndex(func.0, idx, attr_ref);
         }

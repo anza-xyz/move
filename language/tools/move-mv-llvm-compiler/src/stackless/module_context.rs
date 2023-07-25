@@ -873,7 +873,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
     }
 
     /**
-     * Generate solana entrypoint functon code. This functions
+     * Generate solana entrypoint functon code. This function
      * recieves serialized input paramteres from the VM. It calls
      * native function `deserialize` to decode the parameters into
      * corresponding data structures. The function `deserialize`
@@ -923,13 +923,12 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             };
             let ll_fn = self.llvm_module.add_function(&deserialize, ll_fnty);
             self.llvm_module
-                .add_type_attribute(ll_fn, 1, "sret", ll_sret.0);
+                .add_type_attribute(ll_fn, 1, "sret", ll_sret);
             ll_fn
         };
         ll_fn_deserialize
             .as_gv()
             .set_linkage(llvm::LLVMLinkage::LLVMExternalLinkage);
-
         let ret_ty = self.llvm_cx.int_type(1);
         let len_ty = self.llvm_cx.int_type(64);
         let ptr_ty = self.llvm_cx.ptr_type();
@@ -952,7 +951,6 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             };
             self.llvm_module.add_function("main", ll_fnty)
         };
-
         let entry_block = ll_fn_solana_entrypoint.append_basic_block("entry");
         self.llvm_builder.position_at_end(entry_block);
         let retval = self

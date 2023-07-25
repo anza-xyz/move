@@ -212,7 +212,7 @@ impl core::fmt::Debug for MoveAddress {
 pub type SolanaEpoch = u64;
 
 #[repr(transparent)]
-pub struct SolanaPubkey(pub [u8; 32]);
+pub struct SolanaPubkey(pub [u8; target_defs::ACCOUNT_ADDRESS_LENGTH]);
 
 #[repr(C)]
 pub struct SolanaAccountInfo<'a> {
