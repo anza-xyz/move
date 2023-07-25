@@ -56,6 +56,15 @@ pub const BPF_ALIGN_OF_U128: usize = 8;
 
 /// Deserialize the input arguments
 ///
+/// Input arguments consist of three items
+/// - program_id -- a 32 byte Pubkey of the deployed module in Solana ledger,
+/// - accounts -- a vector of AccountInfo items, meta data of Solana
+///               accounts available to and used by the program,
+/// - instruction_data -- a byte array of arbitrary instruction
+///                       specific data. We use it to pass a name of the entry function that
+///                       the Instruction requests to invoke.
+/// accounts in move compiler are represented by SolanaAccountinfo structure in rt_types,
+/// and program_id is represeted by SolanaPubkey structure.
 /// # Safety
 #[allow(clippy::integer_arithmetic)]
 #[allow(clippy::type_complexity)]

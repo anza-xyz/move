@@ -980,6 +980,8 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         ));
         self.llvm_builder.call(ll_fn_deserialize, &input);
 
+        // Make a str slice from instruction_data byte array returned
+        // from a call to deserialize
         let insn_data = self.llvm_builder.getelementptr(
             params,
             &ll_sret.as_struct_type(),
@@ -1010,6 +1012,9 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         );
         let curr_bb = self.llvm_builder.get_insert_block();
         let exit_bb = ll_fn_solana_entrypoint.insert_basic_block_after(curr_bb, "exit_bb");
+        // For every entry function defined in the module compare its
+        // name to the name passed in the instruction_data, and call
+        // the matching entry function.
         for fun in entry_functions {
             let entry = self.generate_global_str_slice(fun.llvm_symbol_name(&[]).as_str());
 
@@ -1054,6 +1059,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             self.llvm_builder.build_br(exit_bb);
             self.llvm_builder.position_at_end(else_bb);
         }
+        // Abort if no entry function matched the requested name.
         self.emit_rtcall_abort_raw(move_core_types::vm_status::StatusCode::EXECUTE_ENTRY_FUNCTION_CALLED_ON_NON_ENTRY_FUNCTION as u64);
         self.llvm_builder.position_at_end(exit_bb);
         let ret = self
