@@ -903,7 +903,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             return;
         }
 
-        let deserialize = String::from("deserialize");
+        let deserialize = String::from("move_rt_deserialize");
         let ll_sret = self.llvm_cx.get_anonymous_struct_type(&[
             self.llvm_cx
                 .get_anonymous_struct_type(&[self.llvm_cx.ptr_type(), self.llvm_cx.int_type(64)]),
@@ -1038,9 +1038,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             self.llvm_builder.build_br(exit_bb);
             self.llvm_builder.position_at_end(else_bb);
         }
-        let ret = llvm::Constant::int(self.llvm_cx.int_type(64), U256::zero()).as_any_value();
-        self.llvm_builder.store(ret, retval);
-        self.llvm_builder.build_br(exit_bb);
+        self.emit_rtcall_abort_raw(move_core_types::vm_status::StatusCode::EXECUTE_ENTRY_FUNCTION_CALLED_ON_NON_ENTRY_FUNCTION as u64);
         self.llvm_builder.position_at_end(exit_bb);
         let ret = self
             .llvm_builder

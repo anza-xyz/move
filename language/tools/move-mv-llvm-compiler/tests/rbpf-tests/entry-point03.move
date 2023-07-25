@@ -1,5 +1,5 @@
 // input entry-point03.json
-// abort 8192
+// abort 1103
 
 module 0x10::debug {
   native public fun print<T>(x: &T);

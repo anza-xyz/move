@@ -59,7 +59,7 @@ pub const BPF_ALIGN_OF_U128: usize = 8;
 /// # Safety
 #[allow(clippy::integer_arithmetic)]
 #[allow(clippy::type_complexity)]
-#[export_name = "deserialize"]
+#[export_name = "move_rt_deserialize"]
 pub unsafe fn deserialize<'a>(input: *mut u8) -> (&'a [u8], &'a SolanaPubkey, MoveUntypedVector) {
     use crate::conv::*;
     use alloc::vec::Vec;
