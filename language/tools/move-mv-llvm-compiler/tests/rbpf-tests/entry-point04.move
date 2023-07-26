@@ -16,7 +16,7 @@ module 0xa000::entry_point {
         amount: u64,
     ): u64
     {
-        assert!(amount == 1234, 0xf000);
+        assert!(amount == 0x2b29251f1d171311, 0xf000);
         0
     }
 }
