@@ -1052,5 +1052,9 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             .load(retval, self.llvm_cx.int_type(64), "exit_code");
         self.llvm_builder.build_return(ret);
         ll_fn_solana_entrypoint.verify();
+
+        if log::max_level() >= log::LevelFilter::Debug {
+            self.llvm_module.dump();
+        }
     }
 }
