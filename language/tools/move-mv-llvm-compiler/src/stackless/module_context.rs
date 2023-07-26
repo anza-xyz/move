@@ -807,11 +807,12 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
                     let len_ty = llcx.int_type(64);
                     let param_tys = &[ptr_ty, len_ty, ptr_ty, len_ty];
                     let llty = llvm::FunctionType::new(ret_ty, param_tys);
-                    let mut attrs = self.mk_pattrs_for_move_type(1);
-                    attrs.push((1, "readonly", None));
-                    attrs.push((1, "nonnull", None));
-                    attrs.push((3, "readonly", None));
-                    attrs.push((3, "nonnull", None));
+                    let attrs = vec![
+                        (1, "readonly", None),
+                        (1, "nonnull", None),
+                        (3, "readonly", None),
+                        (3, "nonnull", None),
+                    ];
                     (llty, attrs)
                 }
                 "struct_cmp_eq" => {
@@ -909,6 +910,43 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         slice
     }
 
+    fn emit_rtcall_deserialize(
+        &self,
+        input: llvm::AnyValue,
+    ) -> (llvm::AnyValue, llvm::AnyValue, llvm::AnyValue) {
+        let llcx = self.llvm_cx;
+        let ll_sret = llcx.get_anonymous_struct_type(&[
+            llcx.get_anonymous_struct_type(&[llcx.ptr_type(), llcx.int_type(64)]),
+            llcx.ptr_type(),
+            llcx.get_anonymous_struct_type(&[
+                llcx.ptr_type(),
+                llcx.int_type(64),
+                llcx.int_type(64),
+            ]),
+        ]);
+        let params = self
+            .llvm_builder
+            .build_alloca(ll_sret, "params")
+            .as_any_value();
+        let args = vec![params, input];
+        let ll_fn_deserialize = self.get_runtime_function(&RtCall::Deserialize(params, input));
+        self.llvm_builder.call(ll_fn_deserialize, &args);
+
+        let insn_data = self.llvm_builder.getelementptr(
+            params,
+            &ll_sret.as_struct_type(),
+            0,
+            "instruction_data",
+        );
+        let program_id =
+            self.llvm_builder
+                .getelementptr(params, &ll_sret.as_struct_type(), 1, "program_id");
+        let accounts =
+            self.llvm_builder
+                .getelementptr(params, &ll_sret.as_struct_type(), 2, "accounts");
+        (insn_data, program_id, accounts)
+    }
+
     /**
      * Generate solana entrypoint functon code. This function
      * recieves serialized input paramteres from the VM. It calls
@@ -954,40 +992,15 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             .llvm_builder
             .build_alloca(self.llvm_cx.int_type(64), "retval")
             .as_any_value();
-        let ll_sret = self.llvm_cx.get_anonymous_struct_type(&[
-            self.llvm_cx
-                .get_anonymous_struct_type(&[self.llvm_cx.ptr_type(), self.llvm_cx.int_type(64)]),
-            self.llvm_cx.ptr_type(),
-            self.llvm_cx.get_anonymous_struct_type(&[
-                self.llvm_cx.ptr_type(),
-                self.llvm_cx.int_type(64),
-                self.llvm_cx.int_type(64),
-            ]),
-        ]);
-        let params = self
-            .llvm_builder
-            .build_alloca(ll_sret, "params")
-            .as_any_value();
+
+        // Get inputs from the VM into proper data structures.
+        let (insn_data, _, _) =
+            self.emit_rtcall_deserialize(ll_fn_solana_entrypoint.get_param(0).as_any_value());
+        // Make a str slice from instruction_data byte array returned
+        // from a call to deserialize
         let str_slice_type = self
             .llvm_cx
             .get_anonymous_struct_type(&[self.llvm_cx.ptr_type(), self.llvm_cx.int_type(64)]);
-
-        // Get inputs from the VM into proper data structures.
-        let input = vec![params, ll_fn_solana_entrypoint.get_param(0).as_any_value()];
-        let ll_fn_deserialize = self.get_runtime_function(&RtCall::Deserialize(
-            params,
-            ll_fn_solana_entrypoint.get_param(0).as_any_value(),
-        ));
-        self.llvm_builder.call(ll_fn_deserialize, &input);
-
-        // Make a str slice from instruction_data byte array returned
-        // from a call to deserialize
-        let insn_data = self.llvm_builder.getelementptr(
-            params,
-            &ll_sret.as_struct_type(),
-            0,
-            "instruction_data",
-        );
         let insn_data_ptr = self.llvm_builder.getelementptr(
             insn_data,
             &str_slice_type.as_struct_type(),
