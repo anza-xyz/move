@@ -868,11 +868,11 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         let acc_vec_ptr =
             self.llvm_builder
                 .load(acc_vec_ptr, llcx.ptr_type(), "acc_vec_ptr_loaded");
-        let data_ty = llcx.get_anonymous_struct_type(&[llcx.ptr_type(), llcx.int_type(64)]);
         let acc_ty = self.rtty_cx.get_llvm_type_for_solana_account_info();
         let acc_data =
             self.llvm_builder
                 .getelementptr(acc_vec_ptr, &acc_ty.as_struct_type(), 2, "acc_data");
+        let data_ty = self.rtty_cx.get_llvm_type_for_slice();
         let acc_data_ptr =
             self.llvm_builder
                 .getelementptr(acc_data, &data_ty.as_struct_type(), 0, "acc_data_ptr");
@@ -954,7 +954,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
     ) -> (llvm::AnyValue, llvm::AnyValue, llvm::AnyValue) {
         let llcx = self.llvm_cx;
         let ll_sret = llcx.get_anonymous_struct_type(&[
-            llcx.get_anonymous_struct_type(&[llcx.ptr_type(), llcx.int_type(64)]),
+            self.rtty_cx.get_llvm_type_for_slice(),
             llcx.ptr_type(),
             self.rtty_cx.get_llvm_type_for_move_native_vector(),
         ]);
@@ -1032,9 +1032,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             self.emit_rtcall_deserialize(ll_fn_solana_entrypoint.get_param(0).as_any_value());
         // Make a str slice from instruction_data byte array returned
         // from a call to deserialize
-        let str_slice_type = self
-            .llvm_cx
-            .get_anonymous_struct_type(&[self.llvm_cx.ptr_type(), self.llvm_cx.int_type(64)]);
+        let str_slice_type = self.rtty_cx.get_llvm_type_for_slice();
         let insn_data_ptr = self.llvm_builder.getelementptr(
             insn_data,
             &str_slice_type.as_struct_type(),
