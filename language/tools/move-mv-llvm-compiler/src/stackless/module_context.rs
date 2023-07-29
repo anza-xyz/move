@@ -860,11 +860,8 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             return vec![];
         }
         let llcx = self.llvm_cx;
-        let vec_ty = llcx.get_anonymous_struct_type(&[
-            llcx.ptr_type(),
-            llcx.int_type(64),
-            llcx.int_type(64),
-        ]);
+
+        let vec_ty = self.rtty_cx.get_llvm_type_for_move_native_vector();
         let acc_vec_ptr =
             self.llvm_builder
                 .getelementptr(*accounts, &vec_ty.as_struct_type(), 0, "acc_vec_ptr");
@@ -968,11 +965,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         let ll_sret = llcx.get_anonymous_struct_type(&[
             llcx.get_anonymous_struct_type(&[llcx.ptr_type(), llcx.int_type(64)]),
             llcx.ptr_type(),
-            llcx.get_anonymous_struct_type(&[
-                llcx.ptr_type(),
-                llcx.int_type(64),
-                llcx.int_type(64),
-            ]),
+            self.rtty_cx.get_llvm_type_for_move_native_vector(),
         ]);
         let params = self
             .llvm_builder
