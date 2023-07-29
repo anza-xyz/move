@@ -869,16 +869,7 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
             self.llvm_builder
                 .load(acc_vec_ptr, llcx.ptr_type(), "acc_vec_ptr_loaded");
         let data_ty = llcx.get_anonymous_struct_type(&[llcx.ptr_type(), llcx.int_type(64)]);
-        let acc_ty = llcx.get_anonymous_struct_type(&[
-            llcx.ptr_type(),   // key
-            llcx.int_type(64), // lamports
-            data_ty,           // data
-            llcx.ptr_type(),   // owner
-            llcx.int_type(64), // rent_epoch
-            llcx.int_type(1),  // is_signer
-            llcx.int_type(1),  // is_writable
-            llcx.int_type(1),  // executable
-        ]);
+        let acc_ty = self.rtty_cx.get_llvm_type_for_solana_account_info();
         let acc_data =
             self.llvm_builder
                 .getelementptr(acc_vec_ptr, &acc_ty.as_struct_type(), 2, "acc_data");
