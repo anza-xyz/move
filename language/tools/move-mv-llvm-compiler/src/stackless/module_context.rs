@@ -879,8 +879,8 @@ impl<'mm, 'up> ModuleContext<'mm, 'up> {
         let acc_data_ptr =
             self.llvm_builder
                 .load(acc_data_ptr, llcx.ptr_type(), "acc_data_ptr_loaded");
-        // Construct a struct of fields with types corresponding to
-        // the entry function formal parameters.  For reference
+        // Make a struct of fields with types corresponding to the
+        // entry function formal parameters.  For reference
         // parameters, use the type it refers to.  The struct helps to
         // compute offsets in acc_data slice for accessing actual
         // argument values.
