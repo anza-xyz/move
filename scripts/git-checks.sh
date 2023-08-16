@@ -18,7 +18,6 @@ done
 # Disallow submodules
 for rev in $(git rev-list $oldrev..$newrev); do
 	comparison=$(git rev-parse --quiet --verify $rev^ || true)
-
 	# Submodules are indicated by files with mode 160000
 	submodules=$(git diff-tree -r $comparison $rev | awk '$2 ~ /160000/ {print substr($0, index($0,$6))}' || true)
 	if [[ $submodules ]] ; then
