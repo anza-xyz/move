@@ -21,6 +21,9 @@ use move_command_line_common::files::{
     MOVE_COMPILED_EXTENSION, MOVE_EXTENSION, SOURCE_MAP_EXTENSION,
 };
 use move_compiler::{shared::PackagePaths, Flags};
+use move_core_types::{
+    identifier::IdentStr, language_storage::ModuleId, metadata::Metadata, value::MoveValue,
+};
 use move_ir_types::location::Spanned;
 use move_model::{
     model::GlobalEnv, options::ModelBuilderOptions, parse_addresses_from_options,
@@ -508,4 +511,15 @@ pub fn run_to_solana<W: WriteColor>(error_writer: &mut W, options: Options) -> a
     compile(global_env, options)?;
 
     Ok(())
+}
+
+pub fn run_for_unit_test(
+    options: &Options,
+    env: &GlobalEnv,
+    module_id: &ModuleId,
+    fun_name: &IdentStr,
+    args: &[MoveValue],
+) -> Result<String, String> {
+    println!("options {:?}\nmodule id {:?}\nfunction {:?}\nargs {:?}", options, module_id, fun_name, args);
+    Ok("output.so".to_string())
 }
