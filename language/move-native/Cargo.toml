@@ -19,7 +19,7 @@ crate-type = ["rlib"]
 solana = []
 
 [dependencies]
-borsh = { version = "0.10.3", default-features = false }
+borsh = { version = "1.0.0", default-features = false }
 ethnum = { version = "1.0.4", default-features = false }
 sha2 = { version = "0.9.3", default-features = false }
 sha3 = { version = "0.9.1", default-features = false }
