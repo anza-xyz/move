@@ -28,6 +28,7 @@ use solana_sdk::{
     transaction_context::{IndexOfAccount, InstructionAccount, TransactionContext},
 };
 use std::{
+    error::Error,
     fs,
     path::{Path, PathBuf},
     sync::Arc,
@@ -176,12 +177,18 @@ fn output_trace(filename: &str, trace: &[[u64; 12]], frame: usize, analysis: &mu
     }
 }
 
-pub fn run_solana_vm(exe: String) -> (ExecuteResult, Duration) {
-    let exe = Path::new(&exe);
+pub fn parse_input(
+    filename: &str,
+) -> (
+    Vec<InstructionAccount>,
+    Vec<(Pubkey, AccountSharedData)>,
+    Vec<u8>,
+    Pubkey,
+) {
+    let loader_id = bpf_loader_upgradeable::id();
     let mut transaction_accounts = Vec::new();
     let mut instruction_accounts = Vec::new();
-    let loader_id = bpf_loader_upgradeable::id();
-    let input = load_input(Path::new("input.json").to_path_buf()).unwrap();
+    let input = load_input(Path::new(&filename).to_path_buf()).unwrap();
     let instruction_data = input.instruction_data.clone();
     let program_id = input.program_id.parse::<Pubkey>().unwrap_or_else(|err| {
         debug!(
@@ -225,6 +232,93 @@ pub fn run_solana_vm(exe: String) -> (ExecuteResult, Duration) {
         program_id, // ID of the loaded program. It can modify accounts with the same owner key
         AccountSharedData::new(0, 0, &loader_id),
     ));
+    (
+        instruction_accounts,
+        transaction_accounts,
+        instruction_data,
+        program_id,
+    )
+}
+
+fn print_logs(invoke_context: &InvokeContext) -> Vec<String> {
+    let all_logs = invoke_context
+        .get_log_collector()
+        .unwrap()
+        .borrow()
+        .get_recorded_content()
+        .to_vec()
+        .iter()
+        .map(|x| {
+            if x.starts_with("Program log: ") {
+                x.strip_prefix("Program log: ").unwrap().to_string()
+            } else {
+                x.clone()
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if std::env::var("DUMP").is_ok() {
+        for (i, event) in all_logs.iter().enumerate() {
+            eprintln!("event {i}: {event:?}");
+        }
+    }
+    all_logs
+}
+
+fn execution_result(
+    result: Result<u64, Box<dyn Error>>,
+    instruction_count: u64,
+    vm_log: String,
+    all_logs: &mut Vec<String>,
+) -> ExecuteResult {
+    match result {
+        Ok(x) => ExecuteResult {
+            exit_reason: ExitReason::Success,
+            return_value: x,
+            compute_units: instruction_count,
+            log: vm_log,
+        },
+        Err(e) if e.is::<SyscallError>() => {
+            let syscall_error = *(e.downcast::<SyscallError>().unwrap());
+            match syscall_error {
+                SyscallError::Abort => {
+                    let abort_code = get_abort_code(all_logs.pop().unwrap());
+                    debug!("Solana VM abort with code {abort_code}");
+                    ExecuteResult {
+                        exit_reason: ExitReason::Abort,
+                        return_value: abort_code,
+                        compute_units: instruction_count,
+                        log: vm_log,
+                    }
+                }
+                _ => {
+                    debug!("Solana VM Syscall Error {syscall_error:?}");
+                    ExecuteResult {
+                        exit_reason: ExitReason::Failure,
+                        return_value: u64::MAX,
+                        compute_units: instruction_count,
+                        log: vm_log + format!("\n{syscall_error:?}").as_str(),
+                    }
+                }
+            }
+        }
+        e => {
+            debug!("Solana VM Error {e:?}");
+            ExecuteResult {
+                exit_reason: ExitReason::Failure,
+                return_value: u64::MAX,
+                compute_units: instruction_count,
+                log: vm_log + format!("\n{e:?}").as_str(),
+            }
+        }
+    }
+}
+
+pub fn run_solana_vm(exe: String) -> (ExecuteResult, Duration) {
+    let exe = Path::new(&exe);
+    let (instruction_accounts, transaction_accounts, instruction_data, program_id) =
+        parse_input("input.json");
+
     let compute_budget = ComputeBudget {
         compute_unit_limit: i64::MAX as u64,
         heap_size: Some(10000000),
@@ -296,7 +390,7 @@ pub fn run_solana_vm(exe: String) -> (ExecuteResult, Duration) {
     let (instruction_count, result) = vm.execute_program(&verified_executable, true);
     let elapsed = now.elapsed();
 
-    let result = Result::from(result);
+    let result: Result<u64, Box<dyn Error>> = Result::from(result);
 
     let trace_var = std::env::var("TRACE");
     if let Ok(trace_filename) = trace_var {
@@ -315,27 +409,7 @@ pub fn run_solana_vm(exe: String) -> (ExecuteResult, Duration) {
 
     drop(vm);
 
-    let mut all_logs = invoke_context
-        .get_log_collector()
-        .unwrap()
-        .borrow()
-        .get_recorded_content()
-        .to_vec()
-        .iter()
-        .map(|x| {
-            if x.starts_with("Program log: ") {
-                x.strip_prefix("Program log: ").unwrap().to_string()
-            } else {
-                x.clone()
-            }
-        })
-        .collect::<Vec<_>>();
-
-    if std::env::var("DUMP").is_ok() {
-        for (i, event) in all_logs.iter().enumerate() {
-            eprintln!("event {i}: {event:?}");
-        }
-    }
+    let mut all_logs: Vec<std::string::String> = print_logs(&invoke_context);
 
     let vm_log = invoke_context
         .get_log_collector()
@@ -343,48 +417,8 @@ pub fn run_solana_vm(exe: String) -> (ExecuteResult, Duration) {
         .borrow()
         .get_recorded_content()
         .join("\n");
-    (
-        match result {
-            Ok(x) => ExecuteResult {
-                exit_reason: ExitReason::Success,
-                return_value: x,
-                compute_units: instruction_count,
-                log: vm_log,
-            },
-            Err(e) if e.is::<SyscallError>() => {
-                let syscall_error = *(e.downcast::<SyscallError>().unwrap());
-                match syscall_error {
-                    SyscallError::Abort => {
-                        let abort_code = get_abort_code(all_logs.pop().unwrap());
-                        debug!("Solana VM abort with code {abort_code}");
-                        ExecuteResult {
-                            exit_reason: ExitReason::Abort,
-                            return_value: abort_code,
-                            compute_units: instruction_count,
-                            log: vm_log,
-                        }
-                    }
-                    _ => {
-                        debug!("Solana VM Syscall Error {syscall_error:?}");
-                        ExecuteResult {
-                            exit_reason: ExitReason::Failure,
-                            return_value: u64::MAX,
-                            compute_units: instruction_count,
-                            log: vm_log + format!("\n{syscall_error:?}").as_str(),
-                        }
-                    }
-                }
-            }
-            e => {
-                debug!("Solana VM Error {e:?}");
-                ExecuteResult {
-                    exit_reason: ExitReason::Failure,
-                    return_value: u64::MAX,
-                    compute_units: instruction_count,
-                    log: vm_log + format!("\n{e:?}").as_str(),
-                }
-            }
-        },
-        elapsed,
-    )
+
+    let execute_result = execution_result(result, instruction_count, vm_log, &mut all_logs);
+
+    (execute_result, elapsed)
 }
