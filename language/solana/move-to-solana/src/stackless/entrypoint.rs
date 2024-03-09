@@ -320,7 +320,6 @@ impl<'mm, 'up> EntrypointGenerator<'mm, 'up> {
             .llvm_builder
             .load(self.retval, self.llvm_cx.int_type(64), "exit_code");
         self.llvm_builder.build_return(ret);
-        self.llvm_module.verify();
 
         if log_enabled!(target: "entry_point", Level::Debug) {
             self.llvm_module.dump();

@@ -289,7 +289,8 @@ fn main() -> anyhow::Result<()> {
                         Err(err) => eprintln!("Error creating directory: {}", err),
                     }
                 }
-                if let Some(module_di) = mod_cx.llvm_di_builder.module_di() {
+                if let Some(_module_di) = mod_cx.llvm_di_builder.module_di() {
+                    let module_di = mod_cx.llvm_module.0;
                     let output_file = format!("{}.debug_info", output_file);
                     llvm_write_to_file(module_di, true, &output_file)?;
                 }

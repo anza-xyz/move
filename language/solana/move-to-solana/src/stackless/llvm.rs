@@ -13,6 +13,7 @@
 //! - Hides weirdly mutable array pointers.
 //! - Provides high-level instruction builders compatible with the stackless bytecode model.
 
+use libc::abort;
 use llvm_extra_sys::*;
 use llvm_sys::{core::*, prelude::*, target::*, target_machine::*, LLVMOpcode, LLVMUnnamedAddr};
 use log::debug;
@@ -39,7 +40,7 @@ pub use llvm_sys::{
 
 use crate::stackless::{
     dwarf::{from_raw_slice_to_string, DIBuilder},
-    GlobalContext,
+    GlobalContext, ModuleContext,
 };
 
 pub fn initialize_sbf() {
@@ -107,7 +108,7 @@ impl Context {
     pub fn create_di_builder<'up>(
         &'up self,
         g_ctx: &'up GlobalContext,
-        module: &mut Module,
+        module: &Module,
         source: &str,
         debug: bool,
     ) -> DIBuilder {
@@ -257,7 +258,7 @@ impl Context {
 pub struct TargetData(LLVMTargetDataRef);
 
 #[derive(Debug)]
-pub struct Module(LLVMModuleRef);
+pub struct Module(pub LLVMModuleRef);
 
 impl Drop for Module {
     fn drop(&mut self) {
@@ -384,11 +385,20 @@ impl Module {
     pub fn verify(&self) {
         use llvm_sys::analysis::*;
         unsafe {
-            LLVMVerifyModule(
+            let name = &self.get_module_id();
+            let addr = &self.0;
+            debug!(target: "module", "{name} module verification address {:#?}", addr);
+            if LLVMVerifyModule(
                 self.0,
-                LLVMVerifierFailureAction::LLVMAbortProcessAction,
+                LLVMVerifierFailureAction::LLVMPrintMessageAction,
                 ptr::null_mut(),
-            );
+            ) == 1
+            {
+                println!("\n{} module verification failed\n", &self.get_module_id());
+                let module_info = &self.print_to_str();
+                debug!(target: "module", "Module content:\n{module_info}\n");
+                abort();
+            }
         }
     }
 
@@ -482,9 +492,17 @@ impl Module {
 
         Ok(())
     }
+
+    pub fn print_to_str(&self) -> &str {
+        unsafe {
+            CStr::from_ptr(LLVMPrintModuleToString(self.0))
+                .to_str()
+                .unwrap()
+        }
+    }
 }
 
-pub struct Builder(LLVMBuilderRef);
+pub struct Builder(pub LLVMBuilderRef);
 
 impl Drop for Builder {
     fn drop(&mut self) {
@@ -534,9 +552,9 @@ impl Builder {
         dst: Alloca,
     ) -> (*mut LLVMValue, *mut LLVMValue) {
         unsafe {
-            let tmp_reg = LLVMBuildLoad2(self.0, ty.0, src.0, "load_store_tmp".cstr());
-            let store = LLVMBuildStore(self.0, tmp_reg, dst.0);
-            (tmp_reg, store)
+            let load = LLVMBuildLoad2(self.0, ty.0, src.0, "load_store_tmp".cstr());
+            let store = LLVMBuildStore(self.0, load, dst.0);
+            (load, store)
         }
     }
 
@@ -878,6 +896,7 @@ impl Builder {
         fnval: Function,
         args: &[(Type, Alloca)],
         dst: &[(Type, Alloca)],
+        instr_dbg: super::dwarf::PublicInstruction<'_>,
     ) {
         unsafe {
             let args = args
@@ -888,7 +907,59 @@ impl Builder {
                     AnyValue(LLVMBuildLoad2(self.0, ty.0, val.0, name.cstr()))
                 })
                 .collect::<Vec<_>>();
-            self.call_store(fnval, &args, dst)
+            self.call_store_with_dst(fnval, &args, dst, instr_dbg)
+        }
+    }
+
+    fn call_store_with_dst(
+        &self,
+        fnval: Function,
+        args: &[AnyValue],
+        dst: &[(Type, Alloca)],
+        instr_dbg: super::dwarf::PublicInstruction<'_>,
+    ) {
+        let fnty = fnval.llvm_type();
+
+        unsafe {
+            let mut args = args.iter().map(|a| a.0).collect::<Vec<_>>();
+            let func_name = get_name(fnval.0);
+            let ret = LLVMBuildCall2(
+                self.0,
+                fnty.0,
+                fnval.0,
+                args.as_mut_ptr(),
+                args.len() as libc::c_uint,
+                (if dst.is_empty() { "" } else { "retval" }).cstr(),
+            );
+            let ret_name = get_name(ret);
+            instr_dbg.create_call(ret);
+            debug!(target: "functions", "call_store function {} ret {}", &func_name, &ret_name);
+
+            if dst.is_empty() {
+                // No return values.
+            } else if dst.len() == 1 {
+                // Single return value.
+                let alloca = dst[0].1;
+                let alloca_name = alloca.get_name();
+                let ret = LLVMBuildStore(self.0, ret, dst[0].1 .0);
+                let ret_name = get_name(ret);
+                debug!(target: "functions", "call_store alloca_name {} ret {} alloca {:#?} ", &alloca_name, &ret_name, alloca);
+            } else {
+                // Multiple return values-- unwrap the struct.
+                let extracts = dst
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (_ty, dval))| {
+                        let _name = dval.get_name();
+                        let name = format!("extract_{i}");
+                        let ev = LLVMBuildExtractValue(self.0, ret, i as libc::c_uint, name.cstr());
+                        (ev, dval)
+                    })
+                    .collect::<Vec<_>>();
+                for (ev, dval) in extracts {
+                    LLVMBuildStore(self.0, ev, dval.0);
+                }
+            }
         }
     }
 
@@ -1159,7 +1230,7 @@ impl FunctionType {
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct Function(LLVMValueRef);
+pub struct Function(pub LLVMValueRef);
 
 impl Function {
     pub fn as_gv(&self) -> Global {
@@ -1218,10 +1289,15 @@ impl Function {
         unsafe { Type(LLVMGetReturnType(LLVMGlobalGetValueType(self.0))) }
     }
 
-    pub fn verify(&self) {
+    pub fn verify(&self, module_cx: &ModuleContext<'_, '_>) {
         use llvm_sys::analysis::*;
+        let module_info = module_cx.llvm_module.print_to_str();
+        debug!(target: "function", "Module content:\n{module_info}\n");
         unsafe {
-            LLVMVerifyFunction(self.0, LLVMVerifierFailureAction::LLVMAbortProcessAction);
+            if LLVMVerifyFunction(self.0, LLVMVerifierFailureAction::LLVMPrintMessageAction) == 1 {
+                println!("{} function verifiction failed", &self.get_name());
+                abort();
+            }
         }
     }
 }

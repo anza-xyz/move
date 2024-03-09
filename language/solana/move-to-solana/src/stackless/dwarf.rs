@@ -5,26 +5,30 @@
 //! Dwarf routines.
 //!
 
-use crate::stackless::{extensions::FunctionEnvExt, llvm::Module, FunctionContext, TargetData};
+use crate::stackless::{
+    extensions::FunctionEnvExt, llvm::Module, Alloca, FunctionContext, ModuleContext, TargetData,
+};
 use anyhow::{Context, Result};
 use codespan::Location;
 use itertools::enumerate;
 use llvm_sys::{
     core::*,
     debuginfo::{
-        LLVMCreateDIBuilder, LLVMDIBuilderCreateBasicType, LLVMDIBuilderCreateCompileUnit,
-        LLVMDIBuilderCreateFile, LLVMDIBuilderCreateFunction, LLVMDIBuilderCreateLexicalBlock,
-        LLVMDIBuilderCreateMemberType, LLVMDIBuilderCreateModule, LLVMDIBuilderCreateNameSpace,
-        LLVMDIBuilderCreateParameterVariable, LLVMDIBuilderCreatePointerType,
+        LLVMCreateDIBuilder, LLVMDIBuilderCreateAutoVariable, LLVMDIBuilderCreateBasicType,
+        LLVMDIBuilderCreateCompileUnit, LLVMDIBuilderCreateDebugLocation,
+        LLVMDIBuilderCreateExpression, LLVMDIBuilderCreateFile, LLVMDIBuilderCreateFunction,
+        LLVMDIBuilderCreateLexicalBlock, LLVMDIBuilderCreateMemberType,
+        LLVMDIBuilderCreateNameSpace, LLVMDIBuilderCreatePointerType,
         LLVMDIBuilderCreateStructType, LLVMDIBuilderCreateSubroutineType,
         LLVMDIBuilderCreateUnspecifiedType, LLVMDIBuilderCreateVectorType, LLVMDIBuilderFinalize,
-        LLVMDIBuilderGetOrCreateSubrange, LLVMDIFlagObjcClassComplete, LLVMDIFlagZero, LLVMDIFlags,
+        LLVMDIBuilderFinalizeSubprogram, LLVMDIBuilderGetOrCreateSubrange,
+        LLVMDIBuilderInsertDeclareAtEnd, LLVMDIFlagObjcClassComplete, LLVMDIFlagZero, LLVMDIFlags,
         LLVMDITypeGetName, LLVMDWARFEmissionKind,
         LLVMDWARFSourceLanguage::LLVMDWARFSourceLanguageRust, LLVMDWARFTypeEncoding,
-        LLVMGetMetadataKind, LLVMMetadataKind,
+        LLVMGetMetadataKind, LLVMInstructionSetDebugLoc, LLVMMetadataKind, LLVMSetSubprogram,
     },
     prelude::*,
-    LLVMValue,
+    LLVMModule, LLVMOpaqueMetadata, LLVMValue,
 };
 
 use log::{debug, error, warn};
@@ -43,6 +47,36 @@ use std::{
 use super::{GlobalContext, StructType, Type};
 
 use move_model::ty as mty;
+
+macro_rules! to_cstring {
+    ($x:expr) => {{
+        let cstr = match std::ffi::CString::new($x) {
+            Ok(cstr) => cstr,
+            Err(_) => std::ffi::CString::new("unknown").expect("Failed to create CString"),
+        };
+        cstr
+    }};
+}
+
+// macro reserved for debugging
+macro_rules! _add_meta_operand {
+    ($ll_mod:expr, $ll_ctx:expr, $md:expr) => {
+        let md_name = stringify!($md).to_owned() + "_info";
+        let name = format!("{}", md_name);
+        let name_cstr = to_cstring!(name.to_string().as_str());
+        let (nm_ptr, _nm_len) = (name_cstr.as_ptr(), name_cstr.as_bytes().len());
+        let md_as_ll_val = LLVMMetadataAsValue($ll_ctx, $md);
+        LLVMAddNamedMetadataOperand($ll_mod, nm_ptr, md_as_ll_val);
+    };
+}
+macro_rules! dbg_meta_operand {
+    ($ll_mod:expr, $ll_ctx:expr, $md:expr, $dbg_name:expr, $func_name: expr) => {
+        let md_name = stringify!($md).to_owned() + "_info";
+        let md_as_ll_val = LLVMMetadataAsValue($ll_ctx, $md);
+        let md_info = print_to_str(md_as_ll_val);
+        debug!(target: $dbg_name, "{} {} starting at next line and until line starting with !!!\n{md_info}\n!!!\n", $func_name, md_name);
+    };
+}
 
 // Similar to llvm::Context, lives in GlobalContext, used for keeping persistent objects
 pub struct DIContext {
@@ -69,16 +103,16 @@ impl DIContext {
 // Main structure used for dwarf generation, one per Module.
 // Use DIBuilder for public api.
 #[derive(Clone)]
-struct DIBuilderCore<'up> {
+pub struct DIBuilderCore<'up> {
     g_ctx: &'up GlobalContext<'up>,
     module_di: LLVMModuleRef, // ref to the new module created here for DI purpose
     builder_ref: LLVMDIBuilderRef,
     // fields below reserved for future usage
     builder_file: LLVMMetadataRef,
     compiled_unit: LLVMMetadataRef,
-    compiled_module: LLVMMetadataRef,
-    module_ref: LLVMModuleRef, // ref to existed "Builder" Module, which was used in 'new'
+    producer: String,
     module_source: String,
+    current_function: RefCell<*mut LLVMOpaqueMetadata>,
     // basic types
     type_unspecified: LLVMMetadataRef,
     type_u8: LLVMMetadataRef,
@@ -101,15 +135,43 @@ pub enum UnresolvedPrintLogLevel {
 struct Instruction<'up> {
     bc: &'up Bytecode,
     func_ctx: &'up FunctionContext<'up, 'up>,
+    // NOTE: no need to keep here di_builder: &'up DIBuilder<'up>, since it is in func_ctx.m_ctx
     loc: move_model::model::Loc,
 }
 
 // Public interface to Instruction, must be used in each particular call, like for example create_load_store
-pub struct PublicInstruction<'a>(Instruction<'a>);
+pub struct PublicInstruction<'a>(Option<Instruction<'a>>);
 
 impl<'up> PublicInstruction<'up> {
     pub fn debug(&self) {
-        self.0.debug();
+        if let Some(instruction) = &self.0 {
+            instruction.debug();
+        }
+    }
+
+    pub fn create_load_store(
+        &self,
+        load: *mut LLVMValue,
+        store: *mut LLVMValue,
+        mty: &mty::Type,
+        ty: Type,
+        src: Alloca,
+        dst: Alloca,
+    ) {
+        if let Some(instruction) = &self.0 {
+            instruction.create_load_store(load, store, mty, ty, src, dst);
+        }
+    }
+
+    pub fn create_call(&self, call_instr: *mut LLVMValue) {
+        if let Some(instruction) = &self.0 {
+            instruction.create_call(call_instr);
+        }
+    }
+
+    pub fn none() -> PublicInstruction<'up> {
+        let none = PublicInstruction(None);
+        none
     }
 }
 
@@ -132,15 +194,187 @@ impl<'up> Instruction<'up> {
             .unwrap_or("String not found".to_string());
         debug!(target: "bytecode", "file {:#?}[{start}-{end}]:{start_line}.{start_column}-{end_line}.{end_column} {substring}", file);
     }
+
+    // returns text in source code associated with this instruction
+    fn source(&self) -> String {
+        let bc = self.bc;
+        let loc = &self.loc;
+        let (file, _line, _column, start, end) = self.loc_display();
+        debug!(target: "bytecode", "{:#?} loc {:#?}", bc, loc);
+        read_substring(&file, start as usize, end as usize).unwrap_or("".to_string())
+    }
+
     fn loc_display(&self) -> (String, u32, u32, u32, u32) {
         let g_env = self.func_ctx.module_cx.env.env;
         let loc = &self.loc;
         loc_display(loc, g_env)
     }
-    fn create_load_store(&self, _load: *mut LLVMValue, _store: *mut LLVMValue, mty: &mty::Type) {
-        let bc = self.bc;
-        let loc = &self.loc;
-        debug!(target: "bytecode", "create_load_store {:#?} loc {:#?} mty {:#?}", bc, loc, mty);
+
+    fn create_load_store(
+        &self,
+        load: *mut LLVMValue,
+        store: *mut LLVMValue,
+        mty: &mty::Type,
+        ty: Type,
+        src: Alloca,
+        dst: Alloca,
+    ) {
+        let source = self.source();
+        debug!(target: "instruction", "create_load_store {source}");
+
+        // a simple reminder how to get debug_info
+        let _bc = self.bc;
+        let _loc = &self.loc;
+        let (_file, _line, _column, _start, _end) = self.loc_display();
+
+        self.create_instr_with_local(load, mty, ty, src);
+        self.create_instr_with_local(store, mty, ty, dst);
+    }
+
+    fn create_call(&self, call_instr: *mut LLVMValue) {
+        let source = self.source();
+        debug!(target: "instruction", "create_call {source}");
+        self.create_naked_instr(call_instr);
+    }
+
+    fn create_naked_instr(&self, instr: *mut LLVMValue) {
+        self.create_instr_impl(instr, None);
+    }
+
+    fn create_instr_with_local(
+        &self,
+        instr: *mut LLVMValue,
+        mty: &mty::Type,
+        ty: Type,
+        alloca: Alloca,
+    ) {
+        self.create_instr_impl(instr, Some((mty, ty, alloca)));
+    }
+
+    // Note: This function needs ty: *mut LLVMOpaqueMetadata, we calculate it from &mty::Type.
+    // Type is reserved and not used now.
+    fn create_instr_impl(&self, instr: *mut LLVMValue, more: Option<(&mty::Type, Type, Alloca)>) {
+        let _bc = self.bc;
+        let _loc = &self.loc;
+        let (file, line, column, _start, _end) = self.loc_display();
+        let source = self.source();
+
+        let instr_info = print_to_str(instr);
+        debug!(target: "instruction", "create_instr_impl instruction info starting at next line and until line starting with !!!\n{instr_info}\n!!!\n");
+
+        unsafe {
+            let module_cx = self.func_ctx.module_cx;
+            let di_builder = &module_cx.llvm_di_builder;
+            let _core = di_builder.core();
+            let ll_ctx = module_cx.llvm_cx.0;
+            let module_ref = module_cx.llvm_module;
+            let ll_mod = module_ref.0;
+            assert!(
+                ll_mod == di_builder.module_di().unwrap(),
+                "LLVM modules must be the same"
+            );
+            let module_info = module_ref.print_to_str();
+            debug!(target: "instruction", "create_instr_impl Module starting at next line and until line starting with !!!\n{module_info}\n!!!\n");
+
+            assert!(
+                ll_ctx == LLVMGetModuleContext(module_ref.0),
+                "Modules must be the same"
+            );
+
+            let _file_name = std::ffi::CString::new(file.clone()).unwrap();
+            let _dir_name = std::ffi::CString::new("".to_string()).unwrap();
+
+            let builder_ref = di_builder.builder_ref().unwrap();
+            let di_builder_file = di_builder.builder_file().unwrap();
+
+            let name = format!("load_store_{file}_{line}_{source}");
+            let name_cstr = to_cstring!(name.to_string().as_str());
+            let (nm_ptr, nm_len) = (name_cstr.as_ptr(), name_cstr.as_bytes().len());
+
+            let basic_block: *mut llvm_sys::LLVMBasicBlock = LLVMGetInstructionParent(instr);
+            let bb_info = print_bb_to_str(basic_block);
+            debug!(target: "instruction", "create_instr_impl basic block starting at next line and until line starting with !!!\n{bb_info}\n!!!\n");
+
+            let parent_function = LLVMGetBasicBlockParent(basic_block);
+
+            let function_module = LLVMGetGlobalParent(parent_function);
+            let module_context = LLVMGetModuleContext(function_module);
+            assert!(ll_ctx == module_context, "Modules are different");
+
+            assert!(
+                ll_mod == di_builder.module_di().unwrap(),
+                "LLVM modules must be the same"
+            );
+
+            let current_function = *di_builder.core().current_function.borrow_mut();
+
+            let debug_location = LLVMDIBuilderCreateDebugLocation(
+                module_context,
+                line,
+                column,
+                current_function,
+                std::ptr::null_mut(), // Inlined at
+            );
+            dbg_meta_operand!(
+                ll_mod,
+                ll_ctx,
+                debug_location,
+                "instruction",
+                "create_instr_impl"
+            );
+
+            LLVMInstructionSetDebugLoc(instr, debug_location);
+
+            if let Some((mty, _ty, alloca)) = more {
+                let lexical_block = LLVMDIBuilderCreateLexicalBlock(
+                    builder_ref,
+                    current_function,
+                    di_builder_file,
+                    line,
+                    column,
+                );
+                dbg_meta_operand!(
+                    ll_mod,
+                    ll_ctx,
+                    lexical_block,
+                    "instruction",
+                    "create_instr_impl"
+                );
+
+                let ty: *mut llvm_sys::LLVMOpaqueMetadata = di_builder.get_type(mty.clone(), &name);
+
+                let loc = LLVMDIBuilderCreateAutoVariable(
+                    builder_ref,
+                    lexical_block, /* scope */
+                    nm_ptr,
+                    nm_len,
+                    di_builder_file,
+                    line,
+                    ty,
+                    0,
+                    0,
+                    0,
+                );
+
+                // TODO: empty expression. It is used by dbg for accessing local and may need to be better than empty.
+                let expression =
+                    LLVMDIBuilderCreateExpression(builder_ref, std::ptr::null_mut(), 0);
+
+                // NOTE: code below inserts llvm.dbg.declare after instruction, but it is not needed for a call instruction
+                let instr_debug = LLVMDIBuilderInsertDeclareAtEnd(
+                    builder_ref,
+                    alloca.get0(), // local variable we trace in dbg
+                    loc,
+                    expression, // may be std::ptr::null_mut(),
+                    debug_location,
+                    basic_block,
+                );
+                debug!(target: "instruction", "create_instr_impl instr_debug starting at next line and until line starting with !!!\n{:#?}\n!!!\n", instr_debug);
+            }
+
+            let module_info = module_ref.print_to_str();
+            debug!(target: "instruction", "\ncreate_instr_with_options eof Module starting at next line and until line starting with !!!\n{module_info}\n!!!\n");
+        };
     }
 }
 
@@ -220,16 +454,6 @@ impl<'up> DIBuilderCore<'up> {
 #[derive(Clone)]
 pub struct DIBuilder<'up>(Option<DIBuilderCore<'up>>);
 
-macro_rules! to_cstring {
-    ($x:expr) => {{
-        let cstr = match std::ffi::CString::new($x) {
-            Ok(cstr) => cstr,
-            Err(_) => std::ffi::CString::new("unknown").expect("Failed to create CString"),
-        };
-        cstr
-    }};
-}
-
 pub fn from_raw_slice_to_string(raw_ptr: *const i8, raw_len: ::libc::size_t) -> String {
     let byte_slice: &[i8] = unsafe { std::slice::from_raw_parts(raw_ptr, raw_len) };
     let byte_slice: &[u8] =
@@ -250,23 +474,30 @@ fn relative_to_absolute(relative_path: &str) -> std::io::Result<String> {
 impl<'up> DIBuilder<'up> {
     pub fn new(
         g_ctx: &'up GlobalContext,
-        module: &mut Module,
+        module: &Module,
         source: &str,
         debug: bool,
     ) -> DIBuilder<'up> {
         if debug {
+            let llmod = module.0;
             let module_ref_name = module.get_module_id();
-            let module_ref = module.as_mut();
 
-            // create new module
-            let module_name = module_ref_name + ".dbg_info";
+            // do not create a new module, rather use existing compilation module
+            let module_name = module_ref_name;
             let cstr = to_cstring!(module_name.as_str());
-            let (mut mod_nm_ptr, mut mod_nm_len) = (cstr.as_ptr(), cstr.as_bytes().len());
-            let module_di =
-                unsafe { LLVMModuleCreateWithName(mod_nm_ptr as *const ::libc::c_char) };
+            let (mut _mod_nm_ptr, mut mod_nm_len) = (cstr.as_ptr(), cstr.as_bytes().len());
+
+            // We do not create own module for debug and instead produce debug info in the existing compilation module.
+            // Notice that it is possible to use a separate debug module, but then adding locations for locals become a problem,
+            // since this by llvm debug technology requires adding nodes in the compilation unit.
+            //
+            let module_di: *mut LLVMModule = llmod;
+
+            let module_di_info = print_module_to_str(&module_di);
+            debug!(target: "dwarf", "DIBuilder bof DI starting at next line and until line starting with !!!\n{module_di_info}\n!!!\n");
 
             // check dbg module name
-            mod_nm_ptr = unsafe { LLVMGetModuleIdentifier(module_di, &mut mod_nm_len) };
+            let mod_nm_ptr = unsafe { LLVMGetModuleIdentifier(module_di, &mut mod_nm_len) };
             let module_di_name = &from_raw_slice_to_string(mod_nm_ptr, mod_nm_len);
             debug!(target: "dwarf", "Created dbg module {:#?}", module_di_name);
 
@@ -303,73 +534,8 @@ impl<'up> DIBuilder<'up> {
             let (mod_nm_ptr, mod_nm_len, dir_ptr, dir_len) =
                 (filename_ptr, filename_len, dir_ptr, dir_len);
 
-            let builder_file = unsafe {
+            let builder_file: *mut LLVMOpaqueMetadata = unsafe {
                 LLVMDIBuilderCreateFile(builder_ref, mod_nm_ptr, mod_nm_len, dir_ptr, dir_len)
-            };
-
-            // create compile unit
-            let producer = "move-mv-llvm-compiler".to_string();
-            let cstr = to_cstring!(producer);
-            let (producer_ptr, producer_len) = (cstr.as_ptr(), cstr.as_bytes().len());
-
-            let flags = "".to_string();
-            let cstr = to_cstring!(flags);
-            let (flags_ptr, flags_len) = (cstr.as_ptr(), cstr.as_bytes().len());
-
-            let slash = "/".to_string();
-            let cstr = to_cstring!(slash);
-            let (slash_ptr, slash_len) = (cstr.as_ptr(), cstr.as_bytes().len());
-
-            let none = String::new();
-            let cstr = to_cstring!(none);
-            let (none_ptr, none_len) = (cstr.as_ptr(), cstr.as_bytes().len());
-
-            let compiled_unit = unsafe {
-                LLVMDIBuilderCreateCompileUnit(
-                    builder_ref,
-                    LLVMDWARFSourceLanguageRust,
-                    builder_file,
-                    producer_ptr,
-                    producer_len,
-                    0, /* is_optimized */
-                    flags_ptr,
-                    flags_len,
-                    0,                /* runtime_version */
-                    std::ptr::null(), /* *const i8 */
-                    0,                /* usize */
-                    LLVMDWARFEmissionKind::LLVMDWARFEmissionKindFull,
-                    0,         /* u32 */
-                    0,         /* i32 */
-                    0,         /* i32 */
-                    slash_ptr, /* *const i8 */
-                    slash_len, /* usize */
-                    none_ptr,  /* *const i8 */
-                    none_len,  /* usize */
-                )
-            };
-
-            // create di module
-            let parent_scope = compiled_unit;
-            let name = module_name;
-            let cstr = to_cstring!(name);
-            let (name_ptr, name_len) = (cstr.as_ptr(), cstr.as_bytes().len());
-
-            let (config_macros_ptr, config_macros_len) = (none_ptr, none_len);
-            let (include_path_ptr, include_path_len) = (none_ptr, none_len);
-            let (api_notes_file_ptr, api_notes_file_len) = (none_ptr, none_len);
-            let compiled_module = unsafe {
-                LLVMDIBuilderCreateModule(
-                    builder_ref,
-                    parent_scope,
-                    name_ptr,
-                    name_len,
-                    config_macros_ptr,
-                    config_macros_len,
-                    include_path_ptr,
-                    include_path_len,
-                    api_notes_file_ptr,
-                    api_notes_file_len,
-                )
             };
 
             fn create_type(
@@ -399,6 +565,11 @@ impl<'up> DIBuilder<'up> {
                 unsafe { LLVMDIBuilderCreateUnspecifiedType(builder_ref, name_ptr, name_len) }
             }
 
+            // create compile unit
+            let producer = "move-mv-llvm-compiler".to_string();
+            let compiled_unit =
+                Self::create_compiled_unit(builder_ref, builder_file, producer.clone());
+
             // store all control fields for future usage
             let builder_core = DIBuilderCore {
                 g_ctx,
@@ -406,9 +577,9 @@ impl<'up> DIBuilder<'up> {
                 builder_ref,
                 builder_file,
                 compiled_unit,
-                compiled_module,
-                module_ref,
+                producer: producer.clone(),
                 module_source: source.to_string(),
+                current_function: RefCell::new(std::ptr::null_mut::<LLVMOpaqueMetadata>()),
                 type_unspecified: create_unspecified_type(builder_ref),
                 type_u8: create_type(builder_ref, "u8", 8, 0, LLVMDIFlagZero),
                 type_u16: create_type(builder_ref, "u16", 16, 0, LLVMDIFlagZero),
@@ -419,6 +590,10 @@ impl<'up> DIBuilder<'up> {
                 type_bool: create_type(builder_ref, "bool", 8, 0, LLVMDIFlagZero),
                 type_address: create_type(builder_ref, "address", 256, 0, LLVMDIFlagZero),
             };
+            let module_di_info = print_module_to_str(&module_di);
+            debug!(target: "dwarf", "DIBuilder bof DI starting at next line and until line starting with !!!\n{module_di_info}\n!!!\n");
+
+            module.verify();
 
             DIBuilder(Some(builder_core))
         } else {
@@ -446,16 +621,16 @@ impl<'up> DIBuilder<'up> {
         self.0.as_ref().map(|x| x.compiled_unit)
     }
 
-    pub fn compiled_module(&self) -> Option<LLVMMetadataRef> {
-        self.0.as_ref().map(|x| x.compiled_module)
-    }
-
     pub fn module_ref(&self) -> Option<LLVMModuleRef> {
-        self.0.as_ref().map(|x| x.module_ref)
+        self.0.as_ref().map(|x| x.module_di)
     }
 
     pub fn module_source(&self) -> Option<String> {
         self.0.as_ref().map(|x| x.module_source.clone())
+    }
+
+    pub fn producer(&self) -> Option<String> {
+        self.0.as_ref().map(|x| x.producer.clone())
     }
 
     fn core(&self) -> &DIBuilderCore {
@@ -539,10 +714,10 @@ impl<'up> DIBuilder<'up> {
             if Self::is_named_type(metadata) {
                 type_get_name(metadata)
             } else {
-                "unknown name".to_string()
+                "unknown_name".to_string()
             }
         } else {
-            "unknown name".to_string()
+            "unknown_name".to_string()
         }
     }
 
@@ -554,8 +729,37 @@ impl<'up> DIBuilder<'up> {
             let name_cstr = unsafe { std::ffi::CStr::from_ptr(name_ptr) };
             name_cstr.to_string_lossy().into_owned()
         } else {
-            "unknown name".to_string()
+            "unknown_name".to_string()
         }
+    }
+
+    pub fn get_operand_name(instruction: LLVMValueRef, idx: u32) -> String {
+        let operand_value = unsafe { LLVMGetOperand(instruction, idx) }; // operands are counted from 0
+        if !operand_value.is_null() {
+            let mut length: ::libc::size_t = 0;
+            let name_ptr = unsafe { LLVMGetValueName2(operand_value, &mut length) };
+            let name_cstr = unsafe { std::ffi::CStr::from_ptr(name_ptr) };
+            name_cstr.to_string_lossy().into_owned()
+        } else {
+            "unknown_name".to_string()
+        }
+    }
+
+    pub fn get_operand_names(instruction: LLVMValueRef) -> Vec<String> {
+        let num_operands = unsafe { LLVMGetNumOperands(instruction) } as u32;
+        (0..num_operands)
+            .map(|idx| Self::get_operand_name(instruction, idx))
+            .collect()
+    }
+
+    pub fn get_operands(instruction: LLVMValueRef) -> Vec<*mut LLVMValue> {
+        let num_operands = unsafe { LLVMGetNumOperands(instruction) } as u32;
+        let mut v = vec![];
+        for idx in 0..num_operands {
+            let x = unsafe { LLVMGetOperand(instruction, idx) };
+            v.push(x)
+        }
+        v
     }
 
     pub fn set_name(&self, value: LLVMValueRef, name: &str) {
@@ -587,6 +791,7 @@ impl<'up> DIBuilder<'up> {
 
     pub fn create_vector(
         &self,
+        m_ctx: &ModuleContext,
         mvec: &[mty::Type],
         llvec: &Type,
         llmod: &Module,
@@ -598,6 +803,19 @@ impl<'up> DIBuilder<'up> {
 
         if let Some(_di_builder_core) = &self.0 {
             let di_builder = self.builder_ref().unwrap();
+            let module_di_test = &self.module_di().unwrap();
+            let module_di = &m_ctx.llvm_module.0;
+            assert!(
+                module_di == module_di_test,
+                "Module context should be the same"
+            );
+            unsafe {
+                LLVMDumpModule(*module_di);
+            }
+            let module_di_info = print_module_to_str(module_di);
+            debug!(target: "dwarf", "\ncreate_vector bof DI starting at next line and until line starting with !!!\n{module_di_info}\n!!!\n");
+
+            let module_ctx = unsafe { LLVMGetModuleContext(*module_di) };
 
             let mty = mvec.get(0).unwrap(); // exists since !mvec.is_empty()
             let vec_di_type = self.get_type(mty.clone(), &"unnamed-vector".to_string());
@@ -631,8 +849,6 @@ impl<'up> DIBuilder<'up> {
                     n_elements as u32,
                 );
 
-                let module_di = &self.module_di().unwrap();
-                let module_ctx = LLVMGetModuleContext(*module_di);
                 let meta_as_value = LLVMMetadataAsValue(module_ctx, vector_di_type);
                 LLVMAddNamedMetadataOperand(*module_di, vec_name_c_str, meta_as_value);
 
@@ -649,10 +865,10 @@ impl<'up> DIBuilder<'up> {
     pub fn create_function(
         &self,
         func_ctx: &FunctionContext<'_, '_>,
-        _parent: Option<LLVMMetadataRef>,
-    ) {
-        if let Some(_di_builder_core) = &self.0 {
-            let di_builder = self.builder_ref().unwrap();
+        _parent: Option<LLVMMetadataRef>, // reserved for future usage
+    ) -> Option<*mut LLVMOpaqueMetadata> {
+        if let Some(di_builder_core) = &self.0 {
+            let di_builder: *mut llvm_sys::LLVMOpaqueDIBuilder = self.builder_ref().unwrap();
             let di_builder_file = self.builder_file().unwrap();
 
             let fn_env = &func_ctx.env;
@@ -663,18 +879,35 @@ impl<'up> DIBuilder<'up> {
                 .get_file_and_location(loc)
                 .unwrap_or(("unknown".to_string(), Location::new(0, 0)));
             let lineno = location.line.0;
+            let column = location.column.0;
 
-            let mod_cx = &func_ctx.module_cx;
-            let module = mod_cx.llvm_module;
+            let module_cx = &func_ctx.module_cx;
+            let ll_ctx = module_cx.llvm_cx.0;
+            let module = module_cx.llvm_module;
+
+            let compiled_unit = self.compiled_unit().unwrap();
+
+            unsafe {
+                dbg_meta_operand!(
+                    ll_mod,
+                    ll_ctx,
+                    compiled_unit,
+                    "functions",
+                    "create_function"
+                );
+            };
+
             let data_layout = module.get_module_data_layout();
+
+            let module_di = &self.module_di().unwrap();
+            let module_ctx = unsafe { LLVMGetModuleContext(*module_di) };
 
             let param_count = func_ctx.env.get_parameter_count();
 
-            let ll_fn = func_ctx
-                .module_cx
+            let ll_fn = module_cx
                 .lookup_move_fn_decl(fn_env.get_qualified_inst_id(func_ctx.type_params.to_vec()));
             let fn_name = fn_env.get_name_str();
-            debug!(target: "functions", "Create DI for function {fn_name} {file}:{lineno} with {param_count} parameters");
+            debug!(target: "functions", "Create DI for function {fn_name} {:#?} {file}:{lineno} with {param_count} parameters", ll_fn.0);
 
             let ll_params = (0..param_count).map(|i| ll_fn.get_param(i));
             let parameters: Vec<_> = ll_params.clone().zip(func_ctx.locals.iter()).collect();
@@ -683,68 +916,66 @@ impl<'up> DIBuilder<'up> {
                 let mty = &local.mty();
                 let mty_info = mty.display(&fn_env.get_type_display_ctx()).to_string();
                 let llty = local.llty();
-                let llty1 = local.llval().llvm_type();
+                let llty_alter = local.llval().llvm_type(); // currently names with _alter are only for debugging
                 let properties = llty.dump_properties_to_str(data_layout);
-                let properties1 = llty1.dump_properties_to_str(data_layout);
+                let properties_alter = llty_alter.dump_properties_to_str(data_layout);
                 let llval = ll_param.0;
-                let llval1 = local.llval().get0();
-                let param_name = func_ctx.module_cx.llvm_di_builder.get_name(llval);
-                let param_name1 = func_ctx.module_cx.llvm_di_builder.get_name(llval1);
+                let llval_alter = local.llval().get0();
+                let param_name = module_cx.llvm_di_builder.get_name(llval);
+                let param_name_alter = module_cx.llvm_di_builder.get_name(llval_alter);
                 debug!(target: "functions", "param {idx}: {param_name} {mty_info} {properties}");
                 // use upper, not lower
-                debug!(target: "functions", "param {idx}: {param_name1} {mty_info} {properties1}");
+                debug!(target: "functions", "param {idx}: {param_name_alter} {mty_info} {properties_alter}");
             }
 
             let name_cstr = to_cstring!(fn_name.clone());
             let (fn_nm_ptr, fn_nm_len) = (name_cstr.as_ptr(), name_cstr.as_bytes().len());
 
+            // NOTE. Explanation of the numbers used below.
+            // Despite some existing freedom in choosing parameter values ​​(for example, the 'scope' in different places
+            // may be either file, or function, or logical scope, or basic block) the final result may vary and even be illegal,
+            // so the module verification may fail.
+            // When debigging and experimenting with parameters on a step, it is convenient to have a reference to the step,
+            // and the step number is used as that reference.
+            // Notice that the actual order of LLVM function calls below may be changed as long as the parameter dependency is preserved.
+            //
+            // -5.
             let name_space = unsafe {
                 LLVMDIBuilderCreateNameSpace(di_builder, di_builder_file, fn_nm_ptr, fn_nm_len, 0)
             };
 
-            let mut fn_params: Vec<LLVMMetadataRef> = enumerate(parameters)
-                .scan(0, |_state, (idx, (ll_param, local))| {
+            // -4.
+            let mut ty_params: Vec<LLVMMetadataRef> = enumerate(&parameters)
+                .scan(0, |_state, (_idx, (ll_param, local))| {
                     let llval = ll_param.0;
-                    let param_name = func_ctx.module_cx.llvm_di_builder.get_name(llval);
-                    let name_cstr = to_cstring!(param_name.clone());
-                    let (param_nm_ptr, param_nm_len) =
-                        (name_cstr.as_ptr(), name_cstr.as_bytes().len());
+                    let param_name = module_cx.llvm_di_builder.get_name(llval);
                     let mty = local.mty();
-                    let param_type = self.get_type(mty.clone(), &param_name);
+                    let fn_param = self.get_type(mty.clone(), &param_name);
 
-                    let fn_param = unsafe {
-                        LLVMDIBuilderCreateParameterVariable(
-                            di_builder,
-                            name_space,
-                            param_nm_ptr,
-                            param_nm_len,
-                            idx as u32,
-                            di_builder_file,
-                            idx as u32,
-                            param_type,
-                            0,
-                            0,
-                        )
-                    };
+                    let fn_param_value = unsafe { LLVMMetadataAsValue(module_ctx, fn_param) };
+                    let fn_param_info = print_to_str(fn_param_value);
+                    debug!(target: "functions", "\ncreate_function fn_param starting at next line and until line starting with !!!\n{fn_param_info}\n!!!\n");
                     Some(fn_param)
                 })
                 .collect();
-            let fn_params_mut: *mut LLVMMetadataRef = fn_params.as_mut_ptr();
+            let ty_params_mut: *mut LLVMMetadataRef = ty_params.as_mut_ptr();
 
+            // -3.
             let subroutine_ty = unsafe {
                 LLVMDIBuilderCreateSubroutineType(
                     di_builder,
                     di_builder_file,
-                    fn_params_mut,
-                    fn_params.len() as u32,
+                    ty_params_mut,
+                    ty_params.len() as u32,
                     0,
                 )
             };
 
+            // -2.
             let function = unsafe {
                 LLVMDIBuilderCreateFunction(
                     di_builder,
-                    name_space,
+                    di_builder_file,
                     fn_nm_ptr,
                     fn_nm_len,
                     fn_nm_ptr,
@@ -759,9 +990,14 @@ impl<'up> DIBuilder<'up> {
                     0, // IsOptimized: TODO: may need change
                 )
             };
+            let mut current_function = di_builder_core.current_function.borrow_mut();
+            *current_function = function;
+            unsafe {
+                dbg_meta_operand!(ll_mod, ll_ctx, function, "functions", "create_function");
+            };
 
-            // reserved for future usage
-            let _lexical_block = unsafe {
+            // -1.
+            let lexical_block = unsafe {
                 LLVMDIBuilderCreateLexicalBlock(
                     di_builder,
                     function,
@@ -771,28 +1007,131 @@ impl<'up> DIBuilder<'up> {
                 )
             };
 
-            let llvm_builder = &mod_cx.llvm_builder;
+            let module_context = unsafe { LLVMGetModuleContext(module.0) };
+            let debug_location = unsafe {
+                LLVMDIBuilderCreateDebugLocation(
+                    module_context,
+                    lineno,
+                    column,
+                    /* Scope */ lexical_block,
+                    std::ptr::null_mut(), // Inlined at
+                )
+            };
 
-            let entry_bb = llvm_builder.get_entry_basic_block(ll_fn);
-            dbg!(entry_bb);
+            unsafe {
+                LLVMSetSubprogram(ll_fn.0, function);
+            };
 
-            let module_di = &self.module_di().unwrap();
-            let module_ctx = unsafe { LLVMGetModuleContext(*module_di) };
+            let llvm_builder = &module_cx.llvm_builder;
+
+            let _entry_bb = llvm_builder.get_entry_basic_block(ll_fn);
+
+            // 0. No need to set compiled_unit, it was set in new()
+
+            // 1. Setting function
             let meta_as_value = unsafe { LLVMMetadataAsValue(module_ctx, function) };
             unsafe { LLVMAddNamedMetadataOperand(*module_di, fn_nm_ptr, meta_as_value) };
 
-            let out = unsafe { LLVMPrintModuleToString(*module_di) };
-            let c_string: *mut i8 = out;
-            let c_str = unsafe {
-                CStr::from_ptr(c_string)
-                    .to_str()
-                    .expect("Cannot convert to &str")
+            // 2. No need to set subroutine_ty, it was set in 1.
+
+            // 3. Setting lexical block. Not used now.
+            let meta_as_value = unsafe { LLVMMetadataAsValue(module_ctx, lexical_block) };
+            unsafe { LLVMAddNamedMetadataOperand(*module_di, fn_nm_ptr, meta_as_value) };
+
+            // 4. Setting name_space. Not used now.
+            let meta_as_value = unsafe { LLVMMetadataAsValue(module_ctx, name_space) };
+            unsafe { LLVMAddNamedMetadataOperand(*module_di, fn_nm_ptr, meta_as_value) };
+
+            // 5. Setting debug location.
+            let meta_as_value = unsafe { LLVMMetadataAsValue(module_ctx, debug_location) };
+            unsafe { LLVMAddNamedMetadataOperand(*module_di, fn_nm_ptr, meta_as_value) };
+
+            // Note: do NOT call module verify at this point, since building function is not done, call verify after function_finalize.
+
+            return Some(function);
+        }
+        None
+    }
+
+    pub fn finalize_function(
+        &self,
+        func_ctx: &FunctionContext<'_, '_>,
+        function: Option<*mut LLVMOpaqueMetadata>,
+    ) {
+        if let (Some(_di_builder_core), Some(function)) = (&self.0, function) {
+            let di_builder = func_ctx.module_cx.llvm_di_builder.builder_ref().unwrap();
+            unsafe {
+                LLVMDIBuilderFinalizeSubprogram(di_builder, function);
             };
-            debug!(target: "functions", "function {fn_name}: DI content: starting at next line and until line starting with !!!\n{}\n!!!\n", c_str);
         }
     }
 
-    pub fn create_type_subroutine(
+    pub fn set_compile_unit(&self, m_ctx: &ModuleContext<'_, '_>) {
+        if let Some(_di_builder_core) = &self.0 {
+            let module_di: &*mut LLVMModule = &m_ctx.llvm_module.0;
+            let module_ctx: *mut llvm_sys::LLVMContext =
+                unsafe { LLVMGetModuleContext(*module_di) };
+            let compiled_unit: *mut LLVMOpaqueMetadata =
+                m_ctx.llvm_di_builder.compiled_unit().unwrap();
+
+            let m_env: &move_model::model::ModuleEnv<'_> = &m_ctx.env;
+            let m_name: String = m_env.get_name().display(m_env.symbol_pool()).to_string();
+            let name_cstr = to_cstring!(m_name.clone());
+            let (fn_nm_ptr, _fn_nm_len) = (name_cstr.as_ptr(), name_cstr.as_bytes().len());
+
+            let meta_as_value = unsafe { LLVMMetadataAsValue(module_ctx, compiled_unit) };
+            unsafe { LLVMAddNamedMetadataOperand(*module_di, fn_nm_ptr, meta_as_value) };
+        }
+    }
+
+    fn create_compiled_unit(
+        di_builder: *mut llvm_sys::LLVMOpaqueDIBuilder,
+        builder_file: *mut LLVMOpaqueMetadata,
+        producer: String,
+    ) -> *mut LLVMOpaqueMetadata {
+        let builder_ref = di_builder;
+        let cstr = to_cstring!(producer);
+        let (producer_ptr, producer_len) = (cstr.as_ptr(), cstr.as_bytes().len());
+
+        let flags = String::new();
+        let cstr = to_cstring!(flags);
+        let (flags_ptr, flags_len) = (cstr.as_ptr(), cstr.as_bytes().len());
+
+        let slash = "/".to_string();
+        let cstr = to_cstring!(slash);
+        let (slash_ptr, slash_len) = (cstr.as_ptr(), cstr.as_bytes().len());
+
+        let none = String::new();
+        let cstr = to_cstring!(none);
+        let (none_ptr, none_len) = (cstr.as_ptr(), cstr.as_bytes().len());
+
+        let compiled_unit: *mut LLVMOpaqueMetadata = unsafe {
+            LLVMDIBuilderCreateCompileUnit(
+                builder_ref,
+                LLVMDWARFSourceLanguageRust,
+                builder_file,
+                producer_ptr,
+                producer_len,
+                0, /* is_optimized */
+                flags_ptr,
+                flags_len,
+                0,                /* runtime_version */
+                std::ptr::null(), /* *const i8 */
+                0,                /* usize */
+                LLVMDWARFEmissionKind::LLVMDWARFEmissionKindFull,
+                0,         /* u32 */
+                0,         /* i32 */
+                0,         /* i32 */
+                slash_ptr, /* *const i8 */
+                slash_len, /* usize */
+                none_ptr,  /* *const i8 */
+                none_len,  /* usize */
+            )
+        };
+        compiled_unit
+    }
+
+    pub fn create_subroutine_type(
         &self,
         name: &str,
         param_types: *mut LLVMMetadataRef,
@@ -1025,27 +1364,55 @@ impl<'up> DIBuilder<'up> {
         &'a self,
         bc: &'a Bytecode,
         func_ctx: &'a FunctionContext<'_, '_>,
-    ) -> Option<PublicInstruction<'a>> {
+    ) -> PublicInstruction {
         if let Some(_di_builder_core) = &self.0 {
             let instr = Instruction::new(bc, func_ctx);
             instr.debug();
-            return Some(PublicInstruction(instr));
+            return PublicInstruction(Some(instr));
         }
-        None
+        PublicInstruction(None)
     }
 
-    pub fn create_load_store(
-        &self,
-        instr: Option<PublicInstruction>,
-        load: *mut LLVMValue,
-        store: *mut LLVMValue,
-        mty: &mty::Type,
-    ) {
-        if let Some(_di_builder_core) = &self.0 {
-            if let Some(instruction) = instr {
-                instruction.0.create_load_store(load, store, mty);
-            }
+    pub fn add_name_alias(instr: LLVMValueRef, name: &str) {
+        let cstr = to_cstring!(name);
+        let (nm_ptr, nm_len) = (cstr.as_ptr(), cstr.as_bytes().len());
+        unsafe {
+            LLVMSetValueName2(instr, nm_ptr, nm_len);
         }
+    }
+
+    // creates auto variable for a given type mty and name
+    pub fn create_auto_variable(
+        &self,
+        scope: LLVMMetadataRef,
+        mty: &move_model::ty::Type,
+        name: &String,
+        file: LLVMMetadataRef,
+        line: libc::c_uint,
+        column: libc::c_uint,
+    ) -> *mut LLVMOpaqueMetadata {
+        let di_builder = self.builder_ref().unwrap();
+        let ty: *mut llvm_sys::LLVMOpaqueMetadata = self.get_type(mty.clone(), name);
+        let cstr = to_cstring!(name.as_str());
+        let (nm_ptr, nm_len) = (cstr.as_ptr(), cstr.as_bytes().len());
+        let x: *mut LLVMOpaqueMetadata;
+        unsafe {
+            let lexical_block =
+                LLVMDIBuilderCreateLexicalBlock(di_builder, scope, file, line, column);
+            x = LLVMDIBuilderCreateAutoVariable(
+                di_builder,
+                lexical_block, /* scope */
+                nm_ptr,
+                nm_len,
+                file,
+                line,
+                ty,
+                0,
+                0,
+                0,
+            );
+        };
+        x
     }
 
     pub fn finalize(&self) {
@@ -1066,6 +1433,34 @@ fn loc_display(loc: &move_model::model::Loc, env: &GlobalEnv) -> (String, u32, u
         )
     } else {
         ("unknown source".to_string(), 0, 0, 0, 0)
+    }
+}
+
+fn print_to_str(val: *mut LLVMValue) -> String {
+    unsafe {
+        CStr::from_ptr(LLVMPrintValueToString(val))
+            .to_str()
+            .unwrap_or("No Info")
+            .to_owned()
+    }
+}
+
+fn print_bb_to_str(bb: LLVMBasicBlockRef) -> String {
+    unsafe {
+        let val = LLVMBasicBlockAsValue(bb);
+        CStr::from_ptr(LLVMPrintValueToString(val))
+            .to_str()
+            .unwrap_or("No Info")
+            .to_owned()
+    }
+}
+
+fn print_module_to_str(module: &LLVMModuleRef) -> String {
+    unsafe {
+        CStr::from_ptr(LLVMPrintModuleToString(*module))
+            .to_str()
+            .unwrap()
+            .to_owned()
     }
 }
 

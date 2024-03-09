@@ -1,41 +1,237 @@
-; ModuleID = '0x101__vector.dbg_info'
+; ModuleID = '0x101__vector'
 source_filename = "/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move"
+target datalayout = "e-m:e-p:64:64-i64:64-n32:64-S128"
+target triple = "sbf-solana-solana"
+
+%__move_rt_type = type { { ptr, i64 }, i64, ptr }
+%struct.vector__Bar = type { %struct.vector__Foo }
+%struct.vector__Foo = type { i64, i1 }
+
+@__move_rttydesc_vector__Foo = private unnamed_addr constant %__move_rt_type { { ptr, i64 } { ptr @__move_rttydesc_vector__Foo_name, i64 77 }, i64 11, ptr @__move_rttydesc_vector__Foo_info }
+@__move_rttydesc_vector__Foo_name = private unnamed_addr constant [77 x i8] c"0000000000000000000000000000000000000000000000000000000000000101::vector::Foo"
+@__move_rttydesc_u64_name = private unnamed_addr constant [3 x i8] c"u64"
+@__move_rttydesc_NOTHING_info = private unnamed_addr constant i8 -1
+@0 = private unnamed_addr constant [1 x i8] c"x"
+@__move_rttydesc_bool_name = private unnamed_addr constant [4 x i8] c"bool"
+@1 = private unnamed_addr constant [1 x i8] c"y"
+@s_fld_array = private unnamed_addr constant [2 x { %__move_rt_type, i64, { ptr, i64 } }] [{ %__move_rt_type, i64, { ptr, i64 } } { %__move_rt_type { { ptr, i64 } { ptr @__move_rttydesc_u64_name, i64 3 }, i64 5, ptr @__move_rttydesc_NOTHING_info }, i64 0, { ptr, i64 } { ptr @0, i64 1 } }, { %__move_rt_type, i64, { ptr, i64 } } { %__move_rt_type { { ptr, i64 } { ptr @__move_rttydesc_bool_name, i64 4 }, i64 1, ptr @__move_rttydesc_NOTHING_info }, i64 8, { ptr, i64 } { ptr @1, i64 1 } }]
+@__move_rttydesc_vector__Foo_info = private unnamed_addr constant { ptr, i64, i64, i64 } { ptr @s_fld_array, i64 2, i64 16, i64 8 }
+@__move_rttydesc_vector__Bar = private unnamed_addr constant %__move_rt_type { { ptr, i64 } { ptr @__move_rttydesc_vector__Bar_name, i64 77 }, i64 11, ptr @__move_rttydesc_vector__Bar_info }
+@__move_rttydesc_vector__Bar_name = private unnamed_addr constant [77 x i8] c"0000000000000000000000000000000000000000000000000000000000000101::vector::Bar"
+@2 = private unnamed_addr constant [3 x i8] c"foo"
+@s_fld_array.1 = private unnamed_addr constant [1 x { %__move_rt_type, i64, { ptr, i64 } }] [{ %__move_rt_type, i64, { ptr, i64 } } { %__move_rt_type { { ptr, i64 } { ptr @__move_rttydesc_vector__Foo_name, i64 77 }, i64 11, ptr @__move_rttydesc_vector__Foo_info }, i64 0, { ptr, i64 } { ptr @2, i64 3 } }]
+@__move_rttydesc_vector__Bar_info = private unnamed_addr constant { ptr, i64, i64, i64 } { ptr @s_fld_array.1, i64 1, i64 16, i64 8 }
+
+declare i32 @memcmp(ptr, ptr, i64)
+
+declare ptr @move_native_vector_borrow(ptr, ptr, i64)
+
+declare { ptr, i64, i64 } @move_native_vector_empty(ptr)
+
+declare void @move_native_vector_push_back(ptr, ptr, ptr)
+
+define void @"0000000000000101_vector_test_singleton__J2xbF6jng4dp5e"() !dbg !2 {
+entry:
+  %local_0 = alloca { ptr, i64, i64 }, align 8
+  %local_1 = alloca { ptr, i64, i64 }, align 8
+  %local_2 = alloca %struct.vector__Bar, align 8
+  %local_3 = alloca %struct.vector__Foo, align 8
+  %local_4__x = alloca i64, align 8
+  %local_5__y = alloca i1, align 1
+  %local_6 = alloca %struct.vector__Foo, align 8
+  %local_7 = alloca %struct.vector__Foo, align 8
+  %local_8 = alloca { ptr, i64, i64 }, align 8
+  %local_9 = alloca ptr, align 8
+  %local_10 = alloca i64, align 8
+  %local_11 = alloca ptr, align 8
+  %local_12 = alloca %struct.vector__Foo, align 8
+  %local_13 = alloca %struct.vector__Foo, align 8
+  %local_14 = alloca i1, align 1
+  %local_15 = alloca i64, align 8
+  %local_16__foo = alloca %struct.vector__Foo, align 8
+  %local_17 = alloca %struct.vector__Bar, align 8
+  %local_18 = alloca %struct.vector__Bar, align 8
+  %local_19 = alloca { ptr, i64, i64 }, align 8
+  %local_20 = alloca ptr, align 8
+  %local_21 = alloca i64, align 8
+  %local_22 = alloca ptr, align 8
+  %local_23 = alloca %struct.vector__Bar, align 8
+  %local_24 = alloca %struct.vector__Bar, align 8
+  %local_25 = alloca i1, align 1
+  %local_26 = alloca i64, align 8
+  store i64 0, ptr %local_4__x, align 8
+  store i1 false, ptr %local_5__y, align 1
+  %fv.0 = load i64, ptr %local_4__x, align 8
+  %fv.1 = load i1, ptr %local_5__y, align 1
+  %insert_0 = insertvalue %struct.vector__Foo undef, i64 %fv.0, 0
+  %insert_1 = insertvalue %struct.vector__Foo %insert_0, i1 %fv.1, 1
+  store %struct.vector__Foo %insert_1, ptr %local_6, align 8
+  %load_store_tmp = load %struct.vector__Foo, ptr %local_6, align 8
+  store %struct.vector__Foo %load_store_tmp, ptr %local_3, align 8
+  %load_store_tmp1 = load %struct.vector__Foo, ptr %local_3, align 8
+  store %struct.vector__Foo %load_store_tmp1, ptr %local_7, align 8
+  %call_arg_0 = load %struct.vector__Foo, ptr %local_7, align 8
+  %retval = call { ptr, i64, i64 } @"0000000000000101_vector_singleton_2hb84uZexr9BHm"(%struct.vector__Foo %call_arg_0), !dbg !36
+  store { ptr, i64, i64 } %retval, ptr %local_8, align 8
+  %load_store_tmp2 = load { ptr, i64, i64 }, ptr %local_8, align 8
+  store { ptr, i64, i64 } %load_store_tmp2, ptr %local_0, align 8
+  store ptr %local_0, ptr %local_9, align 8
+  store i64 0, ptr %local_10, align 8
+  %loaded_alloca = load ptr, ptr %local_9, align 8
+  %loaded_alloca3 = load i64, ptr %local_10, align 8
+  %retval4 = call ptr @move_native_vector_borrow(ptr @__move_rttydesc_vector__Foo, ptr %loaded_alloca, i64 %loaded_alloca3)
+  store ptr %retval4, ptr %local_11, align 8
+  %load_deref_store_tmp1 = load ptr, ptr %local_11, align 8
+  %load_deref_store_tmp2 = load %struct.vector__Foo, ptr %load_deref_store_tmp1, align 8
+  store %struct.vector__Foo %load_deref_store_tmp2, ptr %local_12, align 8
+  %load_store_tmp5 = load %struct.vector__Foo, ptr %local_3, align 8
+  store %struct.vector__Foo %load_store_tmp5, ptr %local_13, align 8
+  %0 = call i1 @move_rt_struct_cmp_eq(ptr @__move_rttydesc_vector__Foo, ptr %local_12, ptr %local_13)
+  store i1 %0, ptr %local_14, align 1
+  %cnd = load i1, ptr %local_14, align 1
+  br i1 %cnd, label %bb_1, label %bb_0
+
+bb_1:                                             ; preds = %entry
+  br label %bb_2
+
+bb_0:                                             ; preds = %entry
+  store i64 0, ptr %local_15, align 8
+  %call_arg_06 = load i64, ptr %local_15, align 8
+  call void @move_rt_abort(i64 %call_arg_06)
+  unreachable
+
+bb_2:                                             ; preds = %bb_1
+  %fv.07 = load %struct.vector__Foo, ptr %local_3, align 8
+  %insert_08 = insertvalue %struct.vector__Bar undef, %struct.vector__Foo %fv.07, 0
+  store %struct.vector__Bar %insert_08, ptr %local_17, align 8
+  %load_store_tmp9 = load %struct.vector__Bar, ptr %local_17, align 8
+  store %struct.vector__Bar %load_store_tmp9, ptr %local_2, align 8
+  %load_store_tmp10 = load %struct.vector__Bar, ptr %local_2, align 8
+  store %struct.vector__Bar %load_store_tmp10, ptr %local_18, align 8
+  %call_arg_011 = load %struct.vector__Bar, ptr %local_18, align 8
+  %retval12 = call { ptr, i64, i64 } @"0000000000000101_vector_singleton_39QxpzcPR6oc9x"(%struct.vector__Bar %call_arg_011), !dbg !37
+  store { ptr, i64, i64 } %retval12, ptr %local_19, align 8
+  %load_store_tmp13 = load { ptr, i64, i64 }, ptr %local_19, align 8
+  store { ptr, i64, i64 } %load_store_tmp13, ptr %local_1, align 8
+  store ptr %local_1, ptr %local_20, align 8
+  store i64 0, ptr %local_21, align 8
+  %loaded_alloca14 = load ptr, ptr %local_20, align 8
+  %loaded_alloca15 = load i64, ptr %local_21, align 8
+  %retval16 = call ptr @move_native_vector_borrow(ptr @__move_rttydesc_vector__Bar, ptr %loaded_alloca14, i64 %loaded_alloca15)
+  store ptr %retval16, ptr %local_22, align 8
+  %load_deref_store_tmp117 = load ptr, ptr %local_22, align 8
+  %load_deref_store_tmp218 = load %struct.vector__Bar, ptr %load_deref_store_tmp117, align 8
+  store %struct.vector__Bar %load_deref_store_tmp218, ptr %local_23, align 8
+  %1 = call i1 @move_rt_struct_cmp_eq(ptr @__move_rttydesc_vector__Bar, ptr %local_23, ptr %local_2)
+  store i1 %1, ptr %local_25, align 1
+  %cnd19 = load i1, ptr %local_25, align 1
+  br i1 %cnd19, label %bb_4, label %bb_3
+
+bb_4:                                             ; preds = %bb_2
+  br label %bb_5
+
+bb_3:                                             ; preds = %bb_2
+  store i64 0, ptr %local_26, align 8
+  %call_arg_020 = load i64, ptr %local_26, align 8
+  call void @move_rt_abort(i64 %call_arg_020)
+  unreachable
+
+bb_5:                                             ; preds = %bb_4
+  ret void
+}
+
+define private { ptr, i64, i64 } @"0000000000000101_vector_singleton_2hb84uZexr9BHm"(%struct.vector__Foo %e) !dbg !25 {
+entry:
+  %local_0 = alloca %struct.vector__Foo, align 8
+  %local_1 = alloca { ptr, i64, i64 }, align 8
+  %local_2 = alloca { ptr, i64, i64 }, align 8
+  %local_3 = alloca ptr, align 8
+  %local_4 = alloca %struct.vector__Foo, align 8
+  %local_5 = alloca { ptr, i64, i64 }, align 8
+  store %struct.vector__Foo %e, ptr %local_0, align 8
+  %retval = call { ptr, i64, i64 } @move_native_vector_empty(ptr @__move_rttydesc_vector__Foo)
+  store { ptr, i64, i64 } %retval, ptr %local_2, align 8
+  %load_store_tmp = load { ptr, i64, i64 }, ptr %local_2, align 8
+  store { ptr, i64, i64 } %load_store_tmp, ptr %local_1, align 8
+  store ptr %local_1, ptr %local_3, align 8
+  %loaded_alloca = load ptr, ptr %local_3, align 8
+  call void @move_native_vector_push_back(ptr @__move_rttydesc_vector__Foo, ptr %loaded_alloca, ptr %local_0)
+  %load_store_tmp1 = load { ptr, i64, i64 }, ptr %local_1, align 8
+  store { ptr, i64, i64 } %load_store_tmp1, ptr %local_5, align 8
+  %retval2 = load { ptr, i64, i64 }, ptr %local_5, align 8
+  ret { ptr, i64, i64 } %retval2
+}
+
+define private { ptr, i64, i64 } @"0000000000000101_vector_singleton_39QxpzcPR6oc9x"(%struct.vector__Bar %e) !dbg !31 {
+entry:
+  %local_0 = alloca %struct.vector__Bar, align 8
+  %local_1 = alloca { ptr, i64, i64 }, align 8
+  %local_2 = alloca { ptr, i64, i64 }, align 8
+  %local_3 = alloca ptr, align 8
+  %local_4 = alloca %struct.vector__Bar, align 8
+  %local_5 = alloca { ptr, i64, i64 }, align 8
+  store %struct.vector__Bar %e, ptr %local_0, align 8
+  %retval = call { ptr, i64, i64 } @move_native_vector_empty(ptr @__move_rttydesc_vector__Bar)
+  store { ptr, i64, i64 } %retval, ptr %local_2, align 8
+  %load_store_tmp = load { ptr, i64, i64 }, ptr %local_2, align 8
+  store { ptr, i64, i64 } %load_store_tmp, ptr %local_1, align 8
+  store ptr %local_1, ptr %local_3, align 8
+  %loaded_alloca = load ptr, ptr %local_3, align 8
+  call void @move_native_vector_push_back(ptr @__move_rttydesc_vector__Bar, ptr %loaded_alloca, ptr %local_0)
+  %load_store_tmp1 = load { ptr, i64, i64 }, ptr %local_1, align 8
+  store { ptr, i64, i64 } %load_store_tmp1, ptr %local_5, align 8
+  %retval2 = load { ptr, i64, i64 }, ptr %local_5, align 8
+  ret { ptr, i64, i64 } %retval2
+}
+
+declare i1 @move_rt_struct_cmp_eq(ptr nonnull readonly dereferenceable(32), ptr nonnull readonly, ptr nonnull readonly)
+
+; Function Attrs: cold noreturn
+declare void @move_rt_abort(i64) #0
+
+attributes #0 = { cold noreturn }
 
 !llvm.dbg.cu = !{!0}
-!struct.vector__Foo = !{!2, !10, !10, !10}
-!struct.vector__Bar = !{!13, !18, !18, !18}
-!test_singleton_contains = !{!19}
-!singleton = !{!23, !28}
+!test_singleton_contains = !{!2, !5, !6, !7}
+!struct.vector__Foo = !{!8, !16, !16, !16}
+!struct.vector__Bar = !{!19, !24, !24, !24}
+!singleton = !{!25, !28, !29, !30, !31, !34, !29, !35}
 
 !0 = distinct !DICompileUnit(language: DW_LANG_Rust, file: !1, producer: "move-mv-llvm-compiler", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, sysroot: "/")
 !1 = !DIFile(filename: "dwarf-vector.move", directory: "/language/tools/move-mv-llvm-compiler/tests/dwarf-tests")
-!2 = !DIDerivedType(tag: DW_TAG_pointer_type, name: "struct.vector__Foo__ptr", baseType: !3, size: 64, align: 64, dwarfAddressSpace: 0)
-!3 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.vector__Foo", scope: !4, file: !1, line: 2, size: 128, align: 8, flags: DIFlagObjcClassComplete, elements: !5)
-!4 = !DINamespace(name: "struct.vector__Foo", scope: !1)
-!5 = !{!6, !8}
-!6 = !DIDerivedType(tag: DW_TAG_member, name: "x", scope: !4, file: !1, line: 2, baseType: !7, size: 64, align: 64)
-!7 = !DIBasicType(name: "u64", size: 64)
-!8 = !DIDerivedType(tag: DW_TAG_member, name: "y", scope: !4, file: !1, line: 3, baseType: !9, size: 1, align: 8, offset: 64)
-!9 = !DIBasicType(name: "bool", size: 8)
-!10 = !DICompositeType(tag: DW_TAG_array_type, baseType: !3, size: 192, align: 8, flags: DIFlagVector, elements: !11)
-!11 = !{!12}
-!12 = !DISubrange(count: 1, lowerBound: 0)
-!13 = !DIDerivedType(tag: DW_TAG_pointer_type, name: "struct.vector__Bar__ptr", baseType: !14, size: 64, align: 64, dwarfAddressSpace: 0)
-!14 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.vector__Bar", scope: !15, file: !1, line: 3, size: 128, align: 8, flags: DIFlagObjcClassComplete, elements: !16)
-!15 = !DINamespace(name: "struct.vector__Bar", scope: !1)
-!16 = !{!17}
-!17 = !DIDerivedType(tag: DW_TAG_member, name: "foo", scope: !15, file: !1, line: 3, baseType: !3, size: 128, align: 64)
-!18 = !DICompositeType(tag: DW_TAG_array_type, baseType: !14, size: 192, align: 8, flags: DIFlagVector, elements: !11)
-!19 = distinct !DISubprogram(name: "test_singleton_contains", linkageName: "test_singleton_contains", scope: !20, file: !1, line: 17, type: !21, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !22)
-!20 = !DINamespace(name: "test_singleton_contains", scope: !1)
-!21 = !DISubroutineType(types: !22)
-!22 = !{}
-!23 = distinct !DISubprogram(name: "singleton", linkageName: "singleton", scope: !24, file: !1, line: 11, type: !25, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !22)
-!24 = !DINamespace(name: "singleton", scope: !1)
-!25 = !DISubroutineType(types: !26)
-!26 = !{!27}
-!27 = !DILocalVariable(name: "e", scope: !24, file: !1, type: !3)
-!28 = distinct !DISubprogram(name: "singleton", linkageName: "singleton", scope: !24, file: !1, line: 11, type: !29, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !22)
-!29 = !DISubroutineType(types: !30)
-!30 = !{!31}
-!31 = !DILocalVariable(name: "e", scope: !24, file: !1, type: !14)
+!2 = distinct !DISubprogram(name: "test_singleton_contains", linkageName: "test_singleton_contains", scope: !1, file: !1, line: 17, type: !3, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !4)
+!3 = !DISubroutineType(types: !4)
+!4 = !{}
+!5 = distinct !DILexicalBlock(scope: !2, file: !1, line: 23)
+!6 = !DINamespace(name: "test_singleton_contains", scope: !1)
+!7 = !DILocation(line: 17, column: 4, scope: !5)
+!8 = !DIDerivedType(tag: DW_TAG_pointer_type, name: "struct.vector__Foo__ptr", baseType: !9, size: 64, align: 64, dwarfAddressSpace: 0)
+!9 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.vector__Foo", scope: !10, file: !1, line: 2, size: 128, align: 8, flags: DIFlagObjcClassComplete, elements: !11)
+!10 = !DINamespace(name: "struct.vector__Foo", scope: !1)
+!11 = !{!12, !14}
+!12 = !DIDerivedType(tag: DW_TAG_member, name: "x", scope: !10, file: !1, line: 2, baseType: !13, size: 64, align: 64)
+!13 = !DIBasicType(name: "u64", size: 64)
+!14 = !DIDerivedType(tag: DW_TAG_member, name: "y", scope: !10, file: !1, line: 3, baseType: !15, size: 1, align: 8, offset: 64)
+!15 = !DIBasicType(name: "bool", size: 8)
+!16 = !DICompositeType(tag: DW_TAG_array_type, baseType: !9, size: 192, align: 8, flags: DIFlagVector, elements: !17)
+!17 = !{!18}
+!18 = !DISubrange(count: 1, lowerBound: 0)
+!19 = !DIDerivedType(tag: DW_TAG_pointer_type, name: "struct.vector__Bar__ptr", baseType: !20, size: 64, align: 64, dwarfAddressSpace: 0)
+!20 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.vector__Bar", scope: !21, file: !1, line: 3, size: 128, align: 8, flags: DIFlagObjcClassComplete, elements: !22)
+!21 = !DINamespace(name: "struct.vector__Bar", scope: !1)
+!22 = !{!23}
+!23 = !DIDerivedType(tag: DW_TAG_member, name: "foo", scope: !21, file: !1, line: 3, baseType: !9, size: 128, align: 64)
+!24 = !DICompositeType(tag: DW_TAG_array_type, baseType: !20, size: 192, align: 8, flags: DIFlagVector, elements: !17)
+!25 = distinct !DISubprogram(name: "singleton", linkageName: "singleton", scope: !1, file: !1, line: 11, type: !26, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !4)
+!26 = !DISubroutineType(types: !27)
+!27 = !{!9}
+!28 = distinct !DILexicalBlock(scope: !25, file: !1, line: 9)
+!29 = !DINamespace(name: "singleton", scope: !1)
+!30 = !DILocation(line: 11, column: 4, scope: !28)
+!31 = distinct !DISubprogram(name: "singleton", linkageName: "singleton", scope: !1, file: !1, line: 11, type: !32, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !4)
+!32 = !DISubroutineType(types: !33)
+!33 = !{!20}
+!34 = distinct !DILexicalBlock(scope: !31, file: !1, line: 9)
+!35 = !DILocation(line: 11, column: 4, scope: !34)
+!36 = !DILocation(line: 20, column: 26, scope: !2)
+!37 = !DILocation(line: 23, column: 43, scope: !2)

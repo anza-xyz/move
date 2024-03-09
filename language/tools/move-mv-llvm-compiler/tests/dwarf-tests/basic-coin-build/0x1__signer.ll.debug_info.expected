@@ -1,15 +1,41 @@
-; ModuleID = '0x1__signer.dbg_info'
-source_filename = "/language/move-stdlib/sources/signer.move"
+; ModuleID = '0x1__signer'
+source_filename = "./../../../../../move-stdlib/sources/signer.move"
+target datalayout = "e-m:e-p:64:64-i64:64-n32:64-S128"
+target triple = "sbf-solana-solana"
+
+declare i32 @memcmp(ptr, ptr, i64)
+
+define [32 x i8] @"0000000000000001_signer_address_of_HobbRqPY4HqJJ6"(ptr nonnull readonly %s) !dbg !2 {
+entry:
+  %local_0 = alloca ptr, align 8
+  %local_1 = alloca ptr, align 8
+  %local_2 = alloca ptr, align 8
+  %local_3 = alloca [32 x i8], align 1
+  store ptr %s, ptr %local_0, align 8
+  %load_store_tmp = load ptr, ptr %local_0, align 8
+  store ptr %load_store_tmp, ptr %local_1, align 8
+  %loaded_alloca = load ptr, ptr %local_1, align 8
+  %retval = call ptr @move_native_signer_borrow_address(ptr %loaded_alloca)
+  store ptr %retval, ptr %local_2, align 8
+  %load_deref_store_tmp1 = load ptr, ptr %local_2, align 8
+  %load_deref_store_tmp2 = load [32 x i8], ptr %load_deref_store_tmp1, align 1
+  store [32 x i8] %load_deref_store_tmp2, ptr %local_3, align 1
+  %retval1 = load [32 x i8], ptr %local_3, align 1
+  ret [32 x i8] %retval1
+}
+
+declare ptr @move_native_signer_borrow_address(ptr)
 
 !llvm.dbg.cu = !{!0}
-!address_of = !{!2}
+!address_of = !{!2, !7, !8, !9}
 
 !0 = distinct !DICompileUnit(language: DW_LANG_Rust, file: !1, producer: "move-mv-llvm-compiler", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, sysroot: "/")
 !1 = !DIFile(filename: "signer.move", directory: "/language/move-stdlib/sources")
-!2 = distinct !DISubprogram(name: "address_of", linkageName: "address_of", scope: !3, file: !1, line: 11, type: !4, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !8)
-!3 = !DINamespace(name: "address_of", scope: !1)
-!4 = !DISubroutineType(types: !5)
-!5 = !{!6}
-!6 = !DILocalVariable(name: "s", scope: !3, file: !1, type: !7)
-!7 = !DIBasicType(tag: DW_TAG_unspecified_type, name: "unspecified type")
-!8 = !{}
+!2 = distinct !DISubprogram(name: "address_of", linkageName: "address_of", scope: !1, file: !1, line: 11, type: !3, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !6)
+!3 = !DISubroutineType(types: !4)
+!4 = !{!5}
+!5 = !DIBasicType(tag: DW_TAG_unspecified_type, name: "unspecified type")
+!6 = !{}
+!7 = distinct !DILexicalBlock(scope: !2, file: !1, line: 10)
+!8 = !DINamespace(name: "address_of", scope: !1)
+!9 = !DILocation(line: 11, column: 4, scope: !7)

@@ -75,10 +75,10 @@ impl<'mm: 'up, 'up> ModuleContext<'mm, 'up> {
             self.entrypoint_generator.add_entries(self);
         }
 
-        self.llvm_module.verify();
         self.llvm_di_builder
             .print_log_unresoled_types(UnresolvedPrintLogLevel::Warning);
         self.llvm_di_builder.finalize();
+        self.llvm_module.verify();
     }
 
     /// Generate LLVM IR struct declarations for all Move structures.

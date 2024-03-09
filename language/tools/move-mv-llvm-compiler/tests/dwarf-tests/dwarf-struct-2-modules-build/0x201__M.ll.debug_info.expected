@@ -1,44 +1,76 @@
-; ModuleID = '0x201__M.dbg_info'
+; ModuleID = '0x201__M'
 source_filename = "/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-struct-2-modules.move"
+target datalayout = "e-m:e-p:64:64-i64:64-n32:64-S128"
+target triple = "sbf-solana-solana"
+
+%struct.M__MyStruct_2 = type { i32, %struct.M__MyStruct }
+%struct.M__MyStruct = type { i32, i1, %struct.M__EmptyStruct, i8, %struct.M__Combined }
+%struct.M__EmptyStruct = type { i1 }
+%struct.M__Combined = type { i1, %struct.M__U64Struct }
+%struct.M__U64Struct = type { i64 }
+
+declare i32 @memcmp(ptr, ptr, i64)
+
+define %struct.M__MyStruct_2 @"0000000000000201_M_fun_2_2AUudfp1Qwf7h7"() !dbg !2 {
+entry:
+  %local_0__field1_u32 = alloca i32, align 4
+  %local_1__other_my_struct_from_101 = alloca %struct.M__MyStruct, align 8
+  %local_2 = alloca %struct.M__MyStruct_2, align 8
+  store i32 15, ptr %local_0__field1_u32, align 4
+  %retval = call %struct.M__MyStruct @"0000000000000101_M_fun_1_AcLtMspYikxikv"(), !dbg !39
+  store %struct.M__MyStruct %retval, ptr %local_1__other_my_struct_from_101, align 8
+  %fv.0 = load i32, ptr %local_0__field1_u32, align 4
+  %fv.1 = load %struct.M__MyStruct, ptr %local_1__other_my_struct_from_101, align 8
+  %insert_0 = insertvalue %struct.M__MyStruct_2 undef, i32 %fv.0, 0
+  %insert_1 = insertvalue %struct.M__MyStruct_2 %insert_0, %struct.M__MyStruct %fv.1, 1
+  store %struct.M__MyStruct_2 %insert_1, ptr %local_2, align 8
+  %retval1 = load %struct.M__MyStruct_2, ptr %local_2, align 8
+  ret %struct.M__MyStruct_2 %retval1
+}
+
+declare %struct.M__MyStruct @"0000000000000101_M_fun_1_AcLtMspYikxikv"()
 
 !llvm.dbg.cu = !{!0}
-!struct.M__MyStruct_2 = !{!2}
-!fun_2 = !{!33}
+!fun_2 = !{!2, !5, !6, !7}
+!struct.M__MyStruct_2 = !{!8}
 
 !0 = distinct !DICompileUnit(language: DW_LANG_Rust, file: !1, producer: "move-mv-llvm-compiler", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, sysroot: "/")
 !1 = !DIFile(filename: "dwarf-struct-2-modules.move", directory: "/language/tools/move-mv-llvm-compiler/tests/dwarf-tests")
-!2 = !DIDerivedType(tag: DW_TAG_pointer_type, name: "struct.M__MyStruct_2__ptr", baseType: !3, size: 64, align: 64, dwarfAddressSpace: 0)
-!3 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.M__MyStruct_2", scope: !4, file: !1, line: 2, size: 256, align: 8, flags: DIFlagObjcClassComplete, elements: !5)
-!4 = !DINamespace(name: "struct.M__MyStruct_2", scope: !1)
-!5 = !{!6, !8}
-!6 = !DIDerivedType(tag: DW_TAG_member, name: "field1_u32", scope: !4, file: !1, line: 2, baseType: !7, size: 32, align: 32)
-!7 = !DIBasicType(name: "u32", size: 32)
-!8 = !DIDerivedType(tag: DW_TAG_member, name: "other_my_struct_from_101", scope: !4, file: !1, line: 3, baseType: !9, size: 192, align: 64, offset: 32)
-!9 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.M__MyStruct", scope: !10, file: !1, line: 19, size: 192, align: 8, flags: DIFlagObjcClassComplete, elements: !11)
-!10 = !DINamespace(name: "struct.M__MyStruct", scope: !1)
-!11 = !{!12, !13, !15, !20, !22}
-!12 = !DIDerivedType(tag: DW_TAG_member, name: "field1_u32", scope: !10, file: !1, line: 19, baseType: !7, size: 32, align: 32)
-!13 = !DIDerivedType(tag: DW_TAG_member, name: "field2_bool", scope: !10, file: !1, line: 20, baseType: !14, size: 1, align: 8, offset: 32)
-!14 = !DIBasicType(name: "bool", size: 8)
-!15 = !DIDerivedType(tag: DW_TAG_member, name: "field3_empty", scope: !10, file: !1, line: 21, baseType: !16, size: 8, align: 8, offset: 40)
-!16 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.M__EmptyStruct", scope: !17, file: !1, line: 27, size: 8, align: 8, flags: DIFlagObjcClassComplete, elements: !18)
-!17 = !DINamespace(name: "struct.M__EmptyStruct", scope: !1)
-!18 = !{!19}
-!19 = !DIDerivedType(tag: DW_TAG_member, name: "dummy_field", scope: !17, file: !1, line: 27, baseType: !14, size: 1, align: 8)
-!20 = !DIDerivedType(tag: DW_TAG_member, name: "field4_u8", scope: !10, file: !1, line: 22, baseType: !21, size: 8, align: 8, offset: 48)
-!21 = !DIBasicType(name: "u8", size: 8)
-!22 = !DIDerivedType(tag: DW_TAG_member, name: "field6_combined", scope: !10, file: !1, line: 23, baseType: !23, size: 128, align: 64, offset: 56)
-!23 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.M__Combined", scope: !24, file: !1, line: 31, size: 128, align: 8, flags: DIFlagObjcClassComplete, elements: !25)
-!24 = !DINamespace(name: "struct.M__Combined", scope: !1)
-!25 = !{!26, !27}
-!26 = !DIDerivedType(tag: DW_TAG_member, name: "field_combined_bool", scope: !24, file: !1, line: 31, baseType: !14, size: 1, align: 8)
-!27 = !DIDerivedType(tag: DW_TAG_member, name: "field_combined_u64_struct", scope: !24, file: !1, line: 32, baseType: !28, size: 64, align: 64, offset: 8)
-!28 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.M__U64Struct", scope: !29, file: !1, line: 29, size: 64, align: 8, flags: DIFlagObjcClassComplete, elements: !30)
-!29 = !DINamespace(name: "struct.M__U64Struct", scope: !1)
-!30 = !{!31}
-!31 = !DIDerivedType(tag: DW_TAG_member, name: "field_u64", scope: !29, file: !1, line: 29, baseType: !32, size: 64, align: 64)
-!32 = !DIBasicType(name: "u64", size: 64)
-!33 = distinct !DISubprogram(name: "fun_2", linkageName: "fun_2", scope: !34, file: !1, line: 7, type: !35, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !36)
-!34 = !DINamespace(name: "fun_2", scope: !1)
-!35 = !DISubroutineType(types: !36)
-!36 = !{}
+!2 = distinct !DISubprogram(name: "fun_2", linkageName: "fun_2", scope: !1, file: !1, line: 7, type: !3, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !4)
+!3 = !DISubroutineType(types: !4)
+!4 = !{}
+!5 = distinct !DILexicalBlock(scope: !2, file: !1, line: 5)
+!6 = !DINamespace(name: "fun_2", scope: !1)
+!7 = !DILocation(line: 7, column: 4, scope: !5)
+!8 = !DIDerivedType(tag: DW_TAG_pointer_type, name: "struct.M__MyStruct_2__ptr", baseType: !9, size: 64, align: 64, dwarfAddressSpace: 0)
+!9 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.M__MyStruct_2", scope: !10, file: !1, line: 2, size: 256, align: 8, flags: DIFlagObjcClassComplete, elements: !11)
+!10 = !DINamespace(name: "struct.M__MyStruct_2", scope: !1)
+!11 = !{!12, !14}
+!12 = !DIDerivedType(tag: DW_TAG_member, name: "field1_u32", scope: !10, file: !1, line: 2, baseType: !13, size: 32, align: 32)
+!13 = !DIBasicType(name: "u32", size: 32)
+!14 = !DIDerivedType(tag: DW_TAG_member, name: "other_my_struct_from_101", scope: !10, file: !1, line: 3, baseType: !15, size: 192, align: 64, offset: 32)
+!15 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.M__MyStruct", scope: !16, file: !1, line: 19, size: 192, align: 8, flags: DIFlagObjcClassComplete, elements: !17)
+!16 = !DINamespace(name: "struct.M__MyStruct", scope: !1)
+!17 = !{!18, !19, !21, !26, !28}
+!18 = !DIDerivedType(tag: DW_TAG_member, name: "field1_u32", scope: !16, file: !1, line: 19, baseType: !13, size: 32, align: 32)
+!19 = !DIDerivedType(tag: DW_TAG_member, name: "field2_bool", scope: !16, file: !1, line: 20, baseType: !20, size: 1, align: 8, offset: 32)
+!20 = !DIBasicType(name: "bool", size: 8)
+!21 = !DIDerivedType(tag: DW_TAG_member, name: "field3_empty", scope: !16, file: !1, line: 21, baseType: !22, size: 8, align: 8, offset: 40)
+!22 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.M__EmptyStruct", scope: !23, file: !1, line: 27, size: 8, align: 8, flags: DIFlagObjcClassComplete, elements: !24)
+!23 = !DINamespace(name: "struct.M__EmptyStruct", scope: !1)
+!24 = !{!25}
+!25 = !DIDerivedType(tag: DW_TAG_member, name: "dummy_field", scope: !23, file: !1, line: 27, baseType: !20, size: 1, align: 8)
+!26 = !DIDerivedType(tag: DW_TAG_member, name: "field4_u8", scope: !16, file: !1, line: 22, baseType: !27, size: 8, align: 8, offset: 48)
+!27 = !DIBasicType(name: "u8", size: 8)
+!28 = !DIDerivedType(tag: DW_TAG_member, name: "field6_combined", scope: !16, file: !1, line: 23, baseType: !29, size: 128, align: 64, offset: 56)
+!29 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.M__Combined", scope: !30, file: !1, line: 31, size: 128, align: 8, flags: DIFlagObjcClassComplete, elements: !31)
+!30 = !DINamespace(name: "struct.M__Combined", scope: !1)
+!31 = !{!32, !33}
+!32 = !DIDerivedType(tag: DW_TAG_member, name: "field_combined_bool", scope: !30, file: !1, line: 31, baseType: !20, size: 1, align: 8)
+!33 = !DIDerivedType(tag: DW_TAG_member, name: "field_combined_u64_struct", scope: !30, file: !1, line: 32, baseType: !34, size: 64, align: 64, offset: 8)
+!34 = !DICompositeType(tag: DW_TAG_structure_type, name: "struct.M__U64Struct", scope: !35, file: !1, line: 29, size: 64, align: 8, flags: DIFlagObjcClassComplete, elements: !36)
+!35 = !DINamespace(name: "struct.M__U64Struct", scope: !1)
+!36 = !{!37}
+!37 = !DIDerivedType(tag: DW_TAG_member, name: "field_u64", scope: !35, file: !1, line: 29, baseType: !38, size: 64, align: 64)
+!38 = !DIBasicType(name: "u64", size: 64)
+!39 = !DILocation(line: 11, column: 39, scope: !2)
