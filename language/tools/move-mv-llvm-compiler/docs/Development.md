@@ -85,6 +85,9 @@ Run the tests with any of these commands:
 cargo test -p move-mv-llvm-compiler --test ir-tests
 cargo test -p move-mv-llvm-compiler --test move-ir-tests
 cargo test -p move-mv-llvm-compiler --test rbpf-tests
+
+# One can also run a specific test e.g., to test only entry-point07.move
+cargo test --profile ci -p move-mv-llvm-compiler --test rbpf-tests entry-point07.move
 ```
 
 The IR tests work by producing `.actual.ll` files and comparing them to
