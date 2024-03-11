@@ -68,6 +68,10 @@ pub struct Args {
     #[clap(short = 'o', default_value = "-")]
     pub output_file_path: String,
 
+    /// Optimization Level [none, less, default, aggressive]
+    #[clap(long = "opt", default_value = "none")]
+    pub opt_level: String,
+
     /// Output llvm bitcode in a human readable text format.
     #[clap(short = 'S')]
     pub llvm_ir: bool,

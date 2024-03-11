@@ -75,6 +75,10 @@ pub struct Options {
     #[clap(long = "extension", default_value = "o")]
     pub output_file_extension: String,
 
+    /// Optimization Level [none, less, default, aggressive]
+    #[clap(long = "opt", default_value = "none")]
+    pub opt_level: String,
+
     /// Output llvm bitcode in a human readable text format.
     #[clap(short = 'S')]
     pub llvm_ir: bool,

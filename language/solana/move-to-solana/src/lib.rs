@@ -373,6 +373,7 @@ fn compile(global_env: &GlobalEnv, options: &Options) -> anyhow::Result<()> {
         tgt_platform.triple(),
         tgt_platform.llvm_cpu(),
         tgt_platform.llvm_features(),
+        &options.opt_level,
     );
     let global_cx = GlobalContext::new(global_env, tgt_platform, &llmachine);
     let output_file_path = options.output.clone();

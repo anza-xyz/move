@@ -209,6 +209,15 @@ fn main() -> anyhow::Result<()> {
             stackless::{extensions::ModuleEnvExt, *},
         };
 
+        let options = MoveToSolanaOptions {
+            gen_dot_cfg: args.gen_dot_cfg.clone(),
+            dot_file_path: args.dot_file_path.clone(),
+            test_signers: args.test_signers.clone(),
+            debug: args.debug,
+            opt_level: args.opt_level.clone(),
+            ..MoveToSolanaOptions::default()
+        };
+
         let tgt_platform = TargetPlatform::Solana;
         tgt_platform.initialize_llvm();
         let lltarget = Target::from_triple(tgt_platform.triple())?;
@@ -216,6 +225,7 @@ fn main() -> anyhow::Result<()> {
             tgt_platform.triple(),
             tgt_platform.llvm_cpu(),
             tgt_platform.llvm_features(),
+            &options.opt_level,
         );
         let global_cx = GlobalContext::new(&global_env, tgt_platform, &llmachine);
 
@@ -241,13 +251,6 @@ fn main() -> anyhow::Result<()> {
                 println!("{}", modname);
             }
         }
-        let options = MoveToSolanaOptions {
-            gen_dot_cfg: args.gen_dot_cfg.clone(),
-            dot_file_path: args.dot_file_path.clone(),
-            test_signers: args.test_signers.clone(),
-            debug: args.debug,
-            ..MoveToSolanaOptions::default()
-        };
         let entry_llmod = global_cx.llvm_cx.create_module("solana_entrypoint");
         let entrypoint_generator =
             EntrypointGenerator::new(&global_cx, &entry_llmod, &llmachine, &options);
