@@ -19,15 +19,15 @@ First, follow the setup instructions for the [move-language/move](https://github
 Testing requires an installation of the Solana [platform-tools](https://github.com/solana-labs/platform-tools). Platform-tools releases provide a build of llvm (packaged as move-dev tools) that supports the Solana variant of eBPF.
 
 Known working revision:
-- platform-tools: version `1.39`
-- move-dev: version `1.39`
+- platform-tools: version `1.41`
+- move-dev: version `1.41`
 
 `platform-tools` can be extracted from the binary release.
 
 Export two environment variables:
 
 - `PLATFORM_TOOLS_ROOT` - the path at which `platform-tools` was extracted
-- `LLVM_SYS_150_PREFIX` - the path at which `move-dev` tools was extracted (as it has llvm binaries, including llvm-config that llvm-sys can use)
+- `LLVM_SYS_170_PREFIX` - the path at which `move-dev` tools was extracted (as it has llvm binaries, including llvm-config that llvm-sys can use)
 
 ### After a toolchain update
 
@@ -45,25 +45,25 @@ rustup toolchain install 1.69.0
 $ cd /path/to/platform-tools/releases/
 # For OSX download (platform-tools-osx-x86_64.tar.bz2, move-dev-osx-x86_64.tar.bz2) for X86, or (move-dev-osx-x86_64.tar.bz2, move-dev-osx-aarch64.tar.bz2) for arm64 devices.
 
-$ wget https://github.com/solana-labs/platform-tools/releases/download/v1.39/move-dev-linux-x86_64.tar.bz2
-$ mkdir v1.39 && cd v1.39
+$ wget https://github.com/solana-labs/platform-tools/releases/download/v1.41/move-dev-linux-x86_64.tar.bz2
+$ mkdir v1.41 && cd v1.41
 $ tar -xf ../platform-tools-linux-x86_64.tar.bz2
-$ ls /path/to/platform-tools/releases/v1.39/move-dev
+$ ls /path/to/platform-tools/releases/v1.41/move-dev
 bin include lib
-$ wget https://github.com/solana-labs/platform-tools/releases/download/v1.39/platform-tools-linux-x86_64.tar.bz2
+$ wget https://github.com/solana-labs/platform-tools/releases/download/v1.41/platform-tools-linux-x86_64.tar.bz2
 $ tar -xf platform-tools-linux-x86_64.tar.bz2
-$ ls /path/to/platform-tools/releases/v1.39/platform-tools
+$ ls /path/to/platform-tools/releases/v1.41/platform-tools
 llvm rust version.md
-$ export PLATFORM_TOOLS_ROOT=/path/to/platform-tools/releases/v1.39/platform-tools
-$ LLVM_SYS_150_PREFIX=/path/to/platform-tools/releases/v1.39/move-dev
+$ export PLATFORM_TOOLS_ROOT=/path/to/platform-tools/releases/v1.41/platform-tools
+$ LLVM_SYS_170_PREFIX=/path/to/platform-tools/releases/v1.41/move-dev
 ```
 
 ## Building
 
 ```sh
-# export LLVM_SYS_150_PREFIX (See Instructions to get move-dev tools)
+# export LLVM_SYS_170_PREFIX (See Instructions to get move-dev tools)
 # export PLATFORM_TOOLS_ROOT (See Instructions to get solana-labs/platform-tools)
-cargo build -p move-ir-compiler -p move-compiler -p move-stdlib
+cargo build -p move-mv-llvm-compiler -p move-ir-compiler -p move-compiler -p move-stdlib -p move-cli
 ```
 
 ## Testing
@@ -80,7 +80,7 @@ These test require the `move-ir-compiler` and `move-build` tools (See: [Build in
 Run the tests with any of these commands:
 
 ```sh
-# export LLVM_SYS_150_PREFIX (See Instructions to build solana-labs/llvm-project)
+# export LLVM_SYS_170_PREFIX (See Instructions to build solana-labs/llvm-project)
 # export PLATFORM_TOOLS_ROOT (See Instructions to get solana-labs/platform-tools)
 cargo test -p move-mv-llvm-compiler --test ir-tests
 cargo test -p move-mv-llvm-compiler --test move-ir-tests
@@ -111,7 +111,7 @@ locally if you make changes to move-stdlib for example.
 - `move-unit-test-framework-tests-solana` - Solana-based move unit test framework tests
 
 ```sh
-# export LLVM_SYS_150_PREFIX (See Instructions to build solana-labs/llvm-project)
+# export LLVM_SYS_170_PREFIX (See Instructions to build solana-labs/llvm-project)
 # export PLATFORM_TOOLS_ROOT (See Instructions to get solana-labs/platform-tools)
 # export MOVE_NATIVE=/path/to/move-repo/language/move-native
 cargo test --features solana-backend -p move-cli --test build_testsuite_solana --test move_unit_tests_solana -- --test-threads 1
@@ -193,7 +193,7 @@ To debug in VS Code add this config:
             "RUST_BACKTRACE": "all",
             "RUST_LOG": "debug",
             "CARGO_MANIFEST_DIR": "something like /home/sol/work/git/move/language/tools/move-mv-llvm-compiler",
-            "LLVM_SYS_150_PREFIX": "something like /home/sol/work/git/platform-tools/out/rust/build/x86_64-unknown-linux-gnu/llvm",
+            "LLVM_SYS_170_PREFIX": "something like /home/sol/work/git/platform-tools/out/rust/build/x86_64-unknown-linux-gnu/llvm",
             "PLATFORM_TOOLS_ROOT": "something like /home/sol/work/git/platform-tools/out/deploy"
     },
     "program": "something like /home/sol/work/git/move/target/debug/deps/dwarf_tests-XXXXXXXXXXXXXXXX",

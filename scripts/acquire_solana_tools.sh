@@ -8,7 +8,7 @@ export MOVE_DEV_PATH
 export PLATFORM_TOOLS_PATH
 
 # platform tools version
-version=v1.39
+version=v1.41
 
 # check os and arch
 OS=$(uname -s)

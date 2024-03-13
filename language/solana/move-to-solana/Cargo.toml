@@ -22,7 +22,7 @@ extension-trait = "1.0.1"
 itertools = "0.10"
 libc = "0.2"
 llvm-extra-sys = { path = "../llvm-extra-sys" }
-llvm-sys = "150.0.3"
+llvm-sys = "170.0.1"
 log = "0.4.14"
 move-binary-format = { path = "../../move-binary-format" }
 move-bytecode-source-map = { path = "../../move-ir-compiler/move-bytecode-source-map" }

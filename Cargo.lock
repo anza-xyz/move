@@ -3680,14 +3680,15 @@ dependencies = [
 
 [[package]]
 name = "llvm-sys"
-version = "150.0.3"
+version = "170.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fab12165825f9fe4a9afa32c17bf55a4014a7f0385c5969975f2d04d36cd611c"
+checksum = "eed90f72df5504c0af2e3a08ee7762a4a3e42ec2605811fc19f64879de40c50a"
 dependencies = [
+ "anyhow",
  "cc",
  "lazy_static 1.4.0",
  "libc",
- "regex",
+ "regex-lite",
  "semver 1.0.17",
 ]
 
@@ -6319,6 +6320,12 @@ dependencies = [
  "byteorder",
  "regex-syntax",
 ]
+
+[[package]]
+name = "regex-lite"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "30b661b2f27137bdbc16f00eda72866a92bb28af1753ffbd56744fb6e2e9cd8e"
 
 [[package]]
 name = "regex-syntax"

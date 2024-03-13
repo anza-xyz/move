@@ -59,7 +59,7 @@ jobs:
       - name: cargo clippy
         run: cargo xclippy --workspace --all-targets
         env:
-          LLVM_SYS_150_PREFIX: ${{ env.MOVE_DEV_PATH }}
+          LLVM_SYS_170_PREFIX: ${{ env.MOVE_DEV_PATH }}
           PLATFORM_TOOLS_ROOT: ${{ env.PLATFORM_TOOLS_PATH }}
       - name: cargo fmt
         run: cargo xfmt --check
@@ -85,7 +85,7 @@ jobs:
       - name: run Solana-based move cli tests
         run: "cargo test --features solana-backend -p move-cli --test build_testsuite_solana --test move_unit_tests_solana -- --test-threads 1"
         env:
-          LLVM_SYS_150_PREFIX: ${{ env.MOVE_DEV_PATH }}
+          LLVM_SYS_170_PREFIX: ${{ env.MOVE_DEV_PATH }}
           MOVE_NATIVE: ${{ env.MOVE_NATIVE_PATH }}
           PLATFORM_TOOLS_ROOT: ${{ env.PLATFORM_TOOLS_PATH }}
 
@@ -107,7 +107,7 @@ jobs:
       - name: run Solana-based move stdlib tests
         run: "cargo run --features solana-backend -p move-cli --bin move -- test --solana -p language/move-stdlib"
         env:
-          LLVM_SYS_150_PREFIX: ${{ env.MOVE_DEV_PATH }}
+          LLVM_SYS_170_PREFIX: ${{ env.MOVE_DEV_PATH }}
           MOVE_NATIVE: ${{ env.MOVE_NATIVE_PATH }}
           PLATFORM_TOOLS_ROOT: ${{ env.PLATFORM_TOOLS_PATH }}
 
@@ -129,6 +129,6 @@ jobs:
       - name: run Solana-based move unit test framework tests
         run: "cargo test --features solana-backend -p move-unit-test --test move_unit_test_testsuite -- --test-threads 1"
         env:
-          LLVM_SYS_150_PREFIX: ${{ env.MOVE_DEV_PATH }}
+          LLVM_SYS_170_PREFIX: ${{ env.MOVE_DEV_PATH }}
           MOVE_NATIVE: ${{ env.MOVE_NATIVE_PATH }}
           PLATFORM_TOOLS_ROOT: ${{ env.PLATFORM_TOOLS_PATH }}

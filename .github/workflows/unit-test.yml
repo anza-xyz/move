@@ -39,7 +39,7 @@ jobs:
         env:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: "sccache"
-          LLVM_SYS_150_PREFIX: ${{ env.MOVE_DEV_PATH }}
+          LLVM_SYS_170_PREFIX: ${{ env.MOVE_DEV_PATH }}
           PLATFORM_TOOLS_ROOT: ${{ env.PLATFORM_TOOLS_PATH }}
 
       - name: build move-ir-compiler
@@ -60,5 +60,5 @@ jobs:
         env:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: "sccache"
-          LLVM_SYS_150_PREFIX: ${{ env.MOVE_DEV_PATH }}
+          LLVM_SYS_170_PREFIX: ${{ env.MOVE_DEV_PATH }}
           PLATFORM_TOOLS_ROOT: ${{ env.PLATFORM_TOOLS_PATH }}
