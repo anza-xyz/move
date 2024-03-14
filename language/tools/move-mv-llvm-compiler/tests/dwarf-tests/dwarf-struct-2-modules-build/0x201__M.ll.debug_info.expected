@@ -36,7 +36,7 @@ declare %struct.M__MyStruct @"0000000000000101_M_fun_1_AcLtMspYikxikv"()
 
 !0 = distinct !DICompileUnit(language: DW_LANG_Rust, file: !1, producer: "move-mv-llvm-compiler", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, sysroot: "/")
 !1 = !DIFile(filename: "dwarf-struct-2-modules.move", directory: "/language/tools/move-mv-llvm-compiler/tests/dwarf-tests")
-!2 = distinct !DISubprogram(name: "fun_2", linkageName: "fun_2", scope: !1, file: !1, line: 7, type: !3, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !4)
+!2 = distinct !DISubprogram(name: "fun_2", linkageName: "fun_2", scope: !1, file: !1, line: 7, type: !3, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0)
 !3 = !DISubroutineType(types: !4)
 !4 = !{}
 !5 = distinct !DILexicalBlock(scope: !2, file: !1, line: 5)

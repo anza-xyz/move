@@ -63,7 +63,7 @@ entry:
 
 !0 = distinct !DICompileUnit(language: DW_LANG_Rust, file: !1, producer: "move-mv-llvm-compiler", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, sysroot: "/")
 !1 = !DIFile(filename: "dwarf-struct.move", directory: "/language/tools/move-mv-llvm-compiler/tests/dwarf-tests")
-!2 = distinct !DISubprogram(name: "fun_1", linkageName: "fun_1", scope: !1, file: !1, line: 16, type: !3, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !4)
+!2 = distinct !DISubprogram(name: "fun_1", linkageName: "fun_1", scope: !1, file: !1, line: 16, type: !3, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0)
 !3 = !DISubroutineType(types: !4)
 !4 = !{}
 !5 = distinct !DILexicalBlock(scope: !2, file: !1, line: 5)
