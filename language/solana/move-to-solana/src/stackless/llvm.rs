@@ -140,7 +140,7 @@ impl Context {
     }
 
     pub fn array_type(&self, ll_elt_ty: Type, len: usize) -> Type {
-        unsafe { Type(LLVMArrayType(ll_elt_ty.0, len as libc::c_uint)) }
+        unsafe { Type(LLVMArrayType2(ll_elt_ty.0, len as u64)) }
     }
 
     pub fn vector_type(&self, ll_elt_ty: Type, len: usize) -> Type {
@@ -205,17 +205,21 @@ impl Context {
                 .iter()
                 .map(|x| Constant::int(llty, u256::U256::from((*x).to_u128().unwrap())).0)
                 .collect();
-            ArrayValue(LLVMConstArray(llty.0, vals.as_mut_ptr(), vals.len() as u32))
+            ArrayValue(LLVMConstArray2(
+                llty.0,
+                vals.as_mut_ptr(),
+                vals.len() as u64,
+            ))
         }
     }
 
     pub fn const_array(&self, vals: &Vec<Constant>, llty: Type) -> ArrayValue {
         let mut llvals: Vec<_> = vals.iter().map(|v| v.get0()).collect();
         unsafe {
-            ArrayValue(LLVMConstArray(
+            ArrayValue(LLVMConstArray2(
                 llty.0,
                 llvals.as_mut_ptr(),
-                vals.len() as u32,
+                vals.len() as u64,
             ))
         }
     }
@@ -1078,7 +1082,7 @@ impl Type {
     }
 
     pub fn get_array_length(&self) -> usize {
-        unsafe { LLVMGetArrayLength(self.0) as usize }
+        unsafe { LLVMGetArrayLength2(self.0) as usize }
     }
 
     pub fn get_element_type(&self) -> Type {
