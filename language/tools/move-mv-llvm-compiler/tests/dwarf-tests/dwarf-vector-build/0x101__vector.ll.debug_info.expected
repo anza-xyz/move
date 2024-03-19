@@ -176,8 +176,10 @@ entry:
   store { ptr, i64, i64 } %load_store_tmp1, ptr %local_5, align 8, !dbg !78
   call void @llvm.dbg.declare(metadata ptr %local_1, metadata !79, metadata !DIExpression()), !dbg !78
   call void @llvm.dbg.declare(metadata ptr %local_5, metadata !81, metadata !DIExpression()), !dbg !78
-  %retval2 = load { ptr, i64, i64 }, ptr %local_5, align 8
-  ret { ptr, i64, i64 } %retval2
+  %retval2 = load { ptr, i64, i64 }, ptr %local_5, align 8, !dbg !78
+  call void @llvm.dbg.declare(metadata ptr %local_5, metadata !83, metadata !DIExpression()), !dbg !78
+  call void @llvm.dbg.declare(metadata ptr %local_5, metadata !85, metadata !DIExpression()), !dbg !78
+  ret { ptr, i64, i64 } %retval2, !dbg !78
 }
 
 define private { ptr, i64, i64 } @"0000000000000101_vector_singleton_39QxpzcPR6oc9x"(%struct.vector__Bar %e) !dbg !31 {
@@ -191,19 +193,21 @@ entry:
   store %struct.vector__Bar %e, ptr %local_0, align 8
   %retval = call { ptr, i64, i64 } @move_native_vector_empty(ptr @__move_rttydesc_vector__Bar)
   store { ptr, i64, i64 } %retval, ptr %local_2, align 8
-  %load_store_tmp = load { ptr, i64, i64 }, ptr %local_2, align 8, !dbg !83
-  store { ptr, i64, i64 } %load_store_tmp, ptr %local_1, align 8, !dbg !83
-  call void @llvm.dbg.declare(metadata ptr %local_2, metadata !84, metadata !DIExpression()), !dbg !83
-  call void @llvm.dbg.declare(metadata ptr %local_1, metadata !86, metadata !DIExpression()), !dbg !83
+  %load_store_tmp = load { ptr, i64, i64 }, ptr %local_2, align 8, !dbg !87
+  store { ptr, i64, i64 } %load_store_tmp, ptr %local_1, align 8, !dbg !87
+  call void @llvm.dbg.declare(metadata ptr %local_2, metadata !88, metadata !DIExpression()), !dbg !87
+  call void @llvm.dbg.declare(metadata ptr %local_1, metadata !90, metadata !DIExpression()), !dbg !87
   store ptr %local_1, ptr %local_3, align 8
   %loaded_alloca = load ptr, ptr %local_3, align 8
   call void @move_native_vector_push_back(ptr @__move_rttydesc_vector__Bar, ptr %loaded_alloca, ptr %local_0)
-  %load_store_tmp1 = load { ptr, i64, i64 }, ptr %local_1, align 8, !dbg !88
-  store { ptr, i64, i64 } %load_store_tmp1, ptr %local_5, align 8, !dbg !88
-  call void @llvm.dbg.declare(metadata ptr %local_1, metadata !89, metadata !DIExpression()), !dbg !88
-  call void @llvm.dbg.declare(metadata ptr %local_5, metadata !91, metadata !DIExpression()), !dbg !88
-  %retval2 = load { ptr, i64, i64 }, ptr %local_5, align 8
-  ret { ptr, i64, i64 } %retval2
+  %load_store_tmp1 = load { ptr, i64, i64 }, ptr %local_1, align 8, !dbg !92
+  store { ptr, i64, i64 } %load_store_tmp1, ptr %local_5, align 8, !dbg !92
+  call void @llvm.dbg.declare(metadata ptr %local_1, metadata !93, metadata !DIExpression()), !dbg !92
+  call void @llvm.dbg.declare(metadata ptr %local_5, metadata !95, metadata !DIExpression()), !dbg !92
+  %retval2 = load { ptr, i64, i64 }, ptr %local_5, align 8, !dbg !92
+  call void @llvm.dbg.declare(metadata ptr %local_5, metadata !97, metadata !DIExpression()), !dbg !92
+  call void @llvm.dbg.declare(metadata ptr %local_5, metadata !99, metadata !DIExpression()), !dbg !92
+  ret { ptr, i64, i64 } %retval2, !dbg !92
 }
 
 ; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
@@ -306,13 +310,21 @@ attributes #1 = { cold noreturn }
 !80 = distinct !DILexicalBlock(scope: !25, file: !1, line: 15, column: 9)
 !81 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_15_v", scope: !82, file: !1, line: 15, type: !49)
 !82 = distinct !DILexicalBlock(scope: !25, file: !1, line: 15, column: 9)
-!83 = !DILocation(line: 13, column: 13, scope: !31)
-!84 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_13_v", scope: !85, file: !1, line: 13, type: !49)
-!85 = distinct !DILexicalBlock(scope: !31, file: !1, line: 13, column: 13)
-!86 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_13_v", scope: !87, file: !1, line: 13, type: !49)
-!87 = distinct !DILexicalBlock(scope: !31, file: !1, line: 13, column: 13)
-!88 = !DILocation(line: 15, column: 9, scope: !31)
-!89 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_15_v", scope: !90, file: !1, line: 15, type: !49)
-!90 = distinct !DILexicalBlock(scope: !31, file: !1, line: 15, column: 9)
-!91 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_15_v", scope: !92, file: !1, line: 15, type: !49)
-!92 = distinct !DILexicalBlock(scope: !31, file: !1, line: 15, column: 9)
+!83 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_15_v", scope: !84, file: !1, line: 15, type: !49)
+!84 = distinct !DILexicalBlock(scope: !25, file: !1, line: 15, column: 9)
+!85 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_15_v", scope: !86, file: !1, line: 15, type: !49)
+!86 = distinct !DILexicalBlock(scope: !25, file: !1, line: 15, column: 9)
+!87 = !DILocation(line: 13, column: 13, scope: !31)
+!88 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_13_v", scope: !89, file: !1, line: 13, type: !49)
+!89 = distinct !DILexicalBlock(scope: !31, file: !1, line: 13, column: 13)
+!90 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_13_v", scope: !91, file: !1, line: 13, type: !49)
+!91 = distinct !DILexicalBlock(scope: !31, file: !1, line: 13, column: 13)
+!92 = !DILocation(line: 15, column: 9, scope: !31)
+!93 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_15_v", scope: !94, file: !1, line: 15, type: !49)
+!94 = distinct !DILexicalBlock(scope: !31, file: !1, line: 15, column: 9)
+!95 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_15_v", scope: !96, file: !1, line: 15, type: !49)
+!96 = distinct !DILexicalBlock(scope: !31, file: !1, line: 15, column: 9)
+!97 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_15_v", scope: !98, file: !1, line: 15, type: !49)
+!98 = distinct !DILexicalBlock(scope: !31, file: !1, line: 15, column: 9)
+!99 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-vector.move_15_v", scope: !100, file: !1, line: 15, type: !49)
+!100 = distinct !DILexicalBlock(scope: !31, file: !1, line: 15, column: 9)

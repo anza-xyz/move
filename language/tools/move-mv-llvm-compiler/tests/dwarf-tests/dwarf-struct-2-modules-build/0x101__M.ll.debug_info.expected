@@ -50,9 +50,16 @@ entry:
   %insert_3 = insertvalue %struct.M__MyStruct %insert_2, i8 %fv.3, 3
   %insert_4 = insertvalue %struct.M__MyStruct %insert_3, %struct.M__Combined %fv.4, 4
   store %struct.M__MyStruct %insert_4, ptr %local_9, align 8
-  %retval = load %struct.M__MyStruct, ptr %local_9, align 8
-  ret %struct.M__MyStruct %retval
+  %retval = load %struct.M__MyStruct, ptr %local_9, align 8, !dbg !37
+  call void @llvm.dbg.declare(metadata ptr %local_9, metadata !38, metadata !DIExpression()), !dbg !37
+  call void @llvm.dbg.declare(metadata ptr %local_9, metadata !40, metadata !DIExpression()), !dbg !37
+  ret %struct.M__MyStruct %retval, !dbg !37
 }
+
+; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
+declare void @llvm.dbg.declare(metadata, metadata, metadata) #0
+
+attributes #0 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
 
 !llvm.dbg.cu = !{!0}
 !fun_1 = !{!2, !5, !6, !7}
@@ -63,7 +70,7 @@ entry:
 
 !0 = distinct !DICompileUnit(language: DW_LANG_Rust, file: !1, producer: "move-mv-llvm-compiler", isOptimized: false, runtimeVersion: 0, emissionKind: FullDebug, splitDebugInlining: false, sysroot: "/")
 !1 = !DIFile(filename: "dwarf-struct-2-modules.move", directory: "/language/tools/move-mv-llvm-compiler/tests/dwarf-tests")
-!2 = distinct !DISubprogram(name: "fun_1", linkageName: "fun_1", scope: !1, file: !1, line: 33, type: !3, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0)
+!2 = distinct !DISubprogram(name: "fun_1", linkageName: "fun_1", scope: !1, file: !1, line: 33, type: !3, spFlags: DISPFlagLocalToUnit | DISPFlagDefinition, unit: !0, retainedNodes: !4)
 !3 = !DISubroutineType(types: !4)
 !4 = !{}
 !5 = distinct !DILexicalBlock(scope: !2, file: !1, line: 5)
@@ -98,3 +105,8 @@ entry:
 !34 = !DIDerivedType(tag: DW_TAG_member, name: "field4_u8", scope: !28, file: !1, line: 22, baseType: !35, size: 8, align: 8, offset: 48)
 !35 = !DIBasicType(name: "u8", size: 8)
 !36 = !DIDerivedType(tag: DW_TAG_member, name: "field6_combined", scope: !28, file: !1, line: 23, baseType: !21, size: 128, align: 64, offset: 56)
+!37 = !DILocation(line: 46, column: 9, scope: !2)
+!38 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-struct-2-modules.move_46_my_struct_copy", scope: !39, file: !1, line: 46, type: !27)
+!39 = distinct !DILexicalBlock(scope: !2, file: !1, line: 46, column: 9)
+!40 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-struct-2-modules.move_46_my_struct_copy", scope: !41, file: !1, line: 46, type: !27)
+!41 = distinct !DILexicalBlock(scope: !2, file: !1, line: 46, column: 9)

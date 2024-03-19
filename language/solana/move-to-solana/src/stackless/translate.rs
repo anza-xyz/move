@@ -508,7 +508,10 @@ impl<'mm, 'up> FunctionContext<'mm, 'up> {
                     let idx = vals[0];
                     let llval = self.locals[idx].llval;
                     let llty = self.locals[idx].llty;
-                    builder.load_return(llty, llval);
+                    let mty = &self.locals[idx].mty;
+                    let (tmp, ret_val) = builder.load_return(llty, llval);
+                    // Dwarf for tracing return value done similar to tracing local variables
+                    instr_dbg.create_load_store(tmp, ret_val, mty, llty, llval, llval);
                 }
                 _ => {
                     // Multiple return values are wrapped in a struct.

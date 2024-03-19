@@ -35,8 +35,10 @@ entry:
   %insert_0 = insertvalue %struct.M__MyStruct_2 undef, i32 %fv.0, 0
   %insert_1 = insertvalue %struct.M__MyStruct_2 %insert_0, %struct.M__MyStruct %fv.1, 1
   store %struct.M__MyStruct_2 %insert_1, ptr %local_5, align 8
-  %retval1 = load %struct.M__MyStruct_2, ptr %local_5, align 8
-  ret %struct.M__MyStruct_2 %retval1
+  %retval1 = load %struct.M__MyStruct_2, ptr %local_5, align 8, !dbg !46
+  call void @llvm.dbg.declare(metadata ptr %local_5, metadata !47, metadata !DIExpression()), !dbg !46
+  call void @llvm.dbg.declare(metadata ptr %local_5, metadata !49, metadata !DIExpression()), !dbg !46
+  ret %struct.M__MyStruct_2 %retval1, !dbg !46
 }
 
 declare %struct.M__MyStruct @"0000000000000101_M_fun_1_AcLtMspYikxikv"(i8, i1)
@@ -96,3 +98,8 @@ attributes #0 = { nocallback nofree nosync nounwind speculatable willreturn memo
 !43 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-functions.move_10_par_1_u32", scope: !44, file: !1, line: 10, type: !5)
 !44 = distinct !DILexicalBlock(scope: !2, file: !1, line: 10, column: 25)
 !45 = !DILocation(line: 11, column: 39, scope: !2)
+!46 = !DILocation(line: 14, column: 9, scope: !2)
+!47 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-functions.move_14_my_struct_copy_2", scope: !48, file: !1, line: 14, type: !11)
+!48 = distinct !DILexicalBlock(scope: !2, file: !1, line: 14, column: 9)
+!49 = !DILocalVariable(name: "load_store_/language/tools/move-mv-llvm-compiler/tests/dwarf-tests/dwarf-functions.move_14_my_struct_copy_2", scope: !50, file: !1, line: 14, type: !11)
+!50 = distinct !DILexicalBlock(scope: !2, file: !1, line: 14, column: 9)

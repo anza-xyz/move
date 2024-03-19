@@ -22,8 +22,10 @@ entry:
   %load_deref_store_tmp1 = load ptr, ptr %local_2, align 8
   %load_deref_store_tmp2 = load [32 x i8], ptr %load_deref_store_tmp1, align 1
   store [32 x i8] %load_deref_store_tmp2, ptr %local_3, align 1
-  %retval1 = load [32 x i8], ptr %local_3, align 1
-  ret [32 x i8] %retval1
+  %retval1 = load [32 x i8], ptr %local_3, align 1, !dbg !15
+  call void @llvm.dbg.declare(metadata ptr %local_3, metadata !16, metadata !DIExpression()), !dbg !15
+  call void @llvm.dbg.declare(metadata ptr %local_3, metadata !19, metadata !DIExpression()), !dbg !15
+  ret [32 x i8] %retval1, !dbg !15
 }
 
 declare ptr @move_native_signer_borrow_address(ptr)
@@ -51,3 +53,9 @@ attributes #0 = { nocallback nofree nosync nounwind speculatable willreturn memo
 !12 = distinct !DILexicalBlock(scope: !2, file: !1, line: 13, column: 25)
 !13 = !DILocalVariable(name: "load_store_./../../../../../move-stdlib/sources/signer.move_13_s", scope: !14, file: !1, line: 13, type: !5)
 !14 = distinct !DILexicalBlock(scope: !2, file: !1, line: 13, column: 25)
+!15 = !DILocation(line: 13, column: 9, scope: !2)
+!16 = !DILocalVariable(name: "load_store_./../../../../../move-stdlib/sources/signer.move_13_*borrow_address(s)", scope: !17, file: !1, line: 13, type: !18)
+!17 = distinct !DILexicalBlock(scope: !2, file: !1, line: 13, column: 9)
+!18 = !DIBasicType(name: "address", size: 256)
+!19 = !DILocalVariable(name: "load_store_./../../../../../move-stdlib/sources/signer.move_13_*borrow_address(s)", scope: !20, file: !1, line: 13, type: !18)
+!20 = distinct !DILexicalBlock(scope: !2, file: !1, line: 13, column: 9)
